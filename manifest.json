@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Time Manager",
+  "version": "1.0",
+  "description": "A simple time-tracking extension.",
+  "action": {
+    "default_popup": "main_window.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "permissions": []
+}
