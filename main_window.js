@@ -25,6 +25,8 @@ document.getElementById("stop-button").addEventListener("click", function () {
   console.log("Timer stopped at:", endTime);
   console.log("Elapsed time:", formattedTime);
 
+  saveSession(taskName, formattedTime);
+
   const resultDisplay = document.createElement("p");
   resultDisplay.innerText = `Last session for ${taskName}: ${formattedTime}`;
   document.body.appendChild(resultDisplay);
@@ -34,3 +36,32 @@ document.getElementById("stop-button").addEventListener("click", function () {
   document.getElementById("stop-button").style.display = "none";
   document.getElementById("start-button").style.display = "inline";
 });
+
+function saveSession(task, duration) {
+  const existingSessions =
+    JSON.parse(localStorage.getItem("timeSessions")) || [];
+  existingSessions.push({ task, duration });
+  localStorage.setItem("timeSessions", JSON.stringify(existingSessions));
+}
+
+document
+  .getElementById("show-log-button")
+  .addEventListener("click", function () {
+    const logDisplay = document.getElementById("log-display");
+    logDisplay.innerHTML = ""; // Clear any existing entries
+
+    // Retrieve saved sessions from local storage
+    const sessions = JSON.parse(localStorage.getItem("timeSessions")) || [];
+
+    if (sessions.length === 0) {
+      logDisplay.innerText = "No recorded sessions yet.";
+    } else {
+      sessions.forEach((session, index) => {
+        const sessionEntry = document.createElement("p");
+        sessionEntry.innerText = `Task ${index + 1}: ${session.task} - ${
+          session.duration
+        }`;
+        logDisplay.appendChild(sessionEntry);
+      });
+    }
+  });
