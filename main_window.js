@@ -1,9 +1,11 @@
 let startTime;
 let elapsedTime = 0;
+let taskName;
 
 document.getElementById("start-button").addEventListener("click", function () {
   startTime = new Date();
-  console.log("Timer started at: " + startTime);
+  taskName = document.getElementById("task_name").value;
+  console.log("Timer started at: " + startTime + " for task " + taskName);
 
   // button visibility
   document.getElementById("start-button").style.display = "none";
@@ -24,7 +26,7 @@ document.getElementById("stop-button").addEventListener("click", function () {
   console.log("Elapsed time:", formattedTime);
 
   const resultDisplay = document.createElement("p");
-  resultDisplay.innerText = `Last session: ${formattedTime}`;
+  resultDisplay.innerText = `Last session for ${taskName}: ${formattedTime}`;
   document.body.appendChild(resultDisplay);
 
   startTime = null;
