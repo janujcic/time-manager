@@ -16,16 +16,11 @@ document.getElementById("stop-button").addEventListener("click", function () {
   const endTime = new Date();
   elapsedTime = endTime - startTime;
 
-  // convert to seconds
-  const seconds = Math.floor(elapsedTime / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-
-  const formattedTime = `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+  const formattedTime = transferSecondsToTime(elapsedTime);
   console.log("Timer stopped at:", endTime);
   console.log("Elapsed time:", formattedTime);
 
-  saveSession(taskName, formattedTime);
+  saveSession(taskName, elapsedTime);
 
   const resultDisplay = document.createElement("p");
   resultDisplay.innerText = `Last session for ${taskName}: ${formattedTime}`;
@@ -37,11 +32,34 @@ document.getElementById("stop-button").addEventListener("click", function () {
   document.getElementById("start-button").style.display = "inline";
 });
 
-function saveSession(task, duration) {
+function saveSession(task, newTime) {
   const existingSessions =
     JSON.parse(localStorage.getItem("timeSessions")) || [];
-  existingSessions.push({ task, duration });
+  const taskIndex = existingSessions.findIndex(
+    (session) => session.task === task
+  );
+
+  if (taskIndex !== -1) {
+    // If task exists, sum the times
+    const existingTime = existingSessions[taskIndex].duration;
+    const totalDuration = existingTime + newTime;
+    existingSessions[taskIndex].duration = totalDuration;
+  } else {
+    // If task doesn't exist, add as new entry
+    existingSessions.push({ task, duration: newTime });
+  }
+
+  // Save updated sessions back to local storage
   localStorage.setItem("timeSessions", JSON.stringify(existingSessions));
+}
+
+function transferSecondsToTime(miliseconds) {
+  // convert to seconds
+  const seconds = Math.floor(miliseconds / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+
+  return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
 }
 
 document
@@ -58,9 +76,9 @@ document
     } else {
       sessions.forEach((session, index) => {
         const sessionEntry = document.createElement("p");
-        sessionEntry.innerText = `Task ${index + 1}: ${session.task} - ${
-          session.duration
-        }`;
+        sessionEntry.innerText =
+          `Task ${index + 1}: ${session.task} - ` +
+          transferSecondsToTime(session.duration);
         logDisplay.appendChild(sessionEntry);
       });
     }
