@@ -1,6 +1,7 @@
 let startTime;
 let elapsedTime = 0;
 let taskName;
+let isLogVisible = false;
 
 document.getElementById("start-button").addEventListener("click", function () {
   startTime = new Date();
@@ -66,20 +67,36 @@ document
   .getElementById("show-log-button")
   .addEventListener("click", function () {
     const logDisplay = document.getElementById("log-display");
-    logDisplay.innerHTML = ""; // Clear any existing entries
 
-    // Retrieve saved sessions from local storage
-    const sessions = JSON.parse(localStorage.getItem("timeSessions")) || [];
-
-    if (sessions.length === 0) {
-      logDisplay.innerText = "No recorded sessions yet.";
+    if (isLogVisible) {
+      // Hide log if already visible
+      logDisplay.innerHTML = "";
     } else {
-      sessions.forEach((session, index) => {
-        const sessionEntry = document.createElement("p");
-        sessionEntry.innerText =
-          `Task ${index + 1}: ${session.task} - ` +
-          transferSecondsToTime(session.duration);
-        logDisplay.appendChild(sessionEntry);
-      });
+      // Show log if not visible
+      logDisplay.innerHTML = ""; // Clear existing entries
+
+      const sessions = JSON.parse(localStorage.getItem("timeSessions")) || [];
+      if (sessions.length === 0) {
+        logDisplay.innerText = "No recorded sessions yet.";
+      } else {
+        sessions.forEach((session, index) => {
+          const sessionEntry = document.createElement("p");
+          sessionEntry.innerText = `Task ${index + 1}: ${session.task} - ${
+            session.duration
+          }`;
+          logDisplay.appendChild(sessionEntry);
+        });
+      }
     }
+
+    isLogVisible = !isLogVisible; // Toggle visibility state
+  });
+
+document
+  .getElementById("clear-log-button")
+  .addEventListener("click", function () {
+    localStorage.removeItem("timeSessions"); // Clear saved sessions
+    document.getElementById("log-display").innerText = "Log cleared."; // Update display
+
+    isLogVisible = false; // Reset visibility state
   });
