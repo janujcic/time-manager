@@ -4,8 +4,16 @@ let taskName;
 let isLogVisible = false;
 
 document.getElementById("start-button").addEventListener("click", function () {
-  startTime = new Date();
   taskName = document.getElementById("task_name").value;
+
+  // Check if the task name is empty
+  if (!taskName) {
+    alert("Please enter a task name before starting the timer.");
+    return; // Stop execution if input is empty
+  }
+
+  startTime = new Date();
+
   console.log("Timer started at: " + startTime + " for task " + taskName);
 
   // button visibility
