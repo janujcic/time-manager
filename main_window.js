@@ -3,42 +3,53 @@ let elapsedTime = 0;
 let taskName;
 let isLogVisible = false;
 
-document.getElementById("start-button").addEventListener("click", function () {
-  taskName = document.getElementById("task_name").value;
+document.addEventListener("DOMContentLoaded", function () {
+  chrome.runtime.sendMessage({ action: "checkStatus" }, (response) => {
+    const { savedTaskName, isRunning } = response.timerData;
+    if (isRunning) {
+      taskName = savedTaskName;
+      document.getElementById("task_name").value = taskName;
+      document.getElementById("start-button").style.display = "none";
+      document.getElementById("stop-button").style.display = "inline";
+    }
+  });
+});
 
-  // Check if the task name is empty
+document.getElementById("start-button").addEventListener("click", function () {
+  const taskName = document.getElementById("task_name").value.trim();
   if (!taskName) {
     alert("Please enter a task name before starting the timer.");
-    return; // Stop execution if input is empty
+    return;
   }
 
-  startTime = new Date();
-
-  console.log("Timer started at: " + startTime + " for task " + taskName);
-
-  // button visibility
-  document.getElementById("start-button").style.display = "none";
-  document.getElementById("stop-button").style.display = "inline";
+  // Send a message to start the timer in the background
+  chrome.runtime.sendMessage({ action: "start", taskName }, (response) => {
+    console.log(response);
+    if (response.status === "started") {
+      document.getElementById("start-button").style.display = "none";
+      document.getElementById("stop-button").style.display = "inline";
+    }
+  });
 });
 
 document.getElementById("stop-button").addEventListener("click", function () {
-  const endTime = new Date();
-  elapsedTime = endTime - startTime;
+  // Send a message to stop the timer in the background
+  chrome.runtime.sendMessage({ action: "stop" }, (response) => {
+    if (response.status === "stopped") {
+      document.getElementById("stop-button").style.display = "none";
+      document.getElementById("start-button").style.display = "inline";
 
-  const formattedTime = transferSecondsToTime(elapsedTime);
-  console.log("Timer stopped at:", endTime);
-  console.log("Elapsed time:", formattedTime);
+      // Display elapsed time
+      const resultDisplay = document.createElement("p");
+      resultDisplay.innerText = `Elapsed time for ${taskName}: ${transferSecondsToTime(
+        response.elapsedTime
+      )}`;
+      document.body.appendChild(resultDisplay);
 
-  saveSession(taskName, elapsedTime);
-
-  const resultDisplay = document.createElement("p");
-  resultDisplay.innerText = `Last session for ${taskName}: ${formattedTime}`;
-  document.body.appendChild(resultDisplay);
-
-  startTime = null;
-
-  document.getElementById("stop-button").style.display = "none";
-  document.getElementById("start-button").style.display = "inline";
+      // Save session to local storage with summing if task matches
+      saveSession(taskName, response.elapsedTime);
+    }
+  });
 });
 
 function saveSession(task, newTime) {
