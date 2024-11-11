@@ -81,6 +81,14 @@ function getSessionsFromBackground(callback) {
   });
 }
 
+function clearSessionsInBackground() {
+  chrome.runtime.sendMessage({ action: "clearSessions" }, (response) => {
+    if (response.status === "cleared") {
+      console.log("Sessions cleared from storage.");
+    }
+  });
+}
+
 document
   .getElementById("show-log-button")
   .addEventListener("click", function () {
@@ -115,7 +123,7 @@ document
 document
   .getElementById("clear-log-button")
   .addEventListener("click", function () {
-    localStorage.removeItem("timeSessions"); // Clear saved sessions
+    clearSessionsInBackground();
     document.getElementById("log-display").innerText = "Log cleared."; // Update display
 
     isLogVisible = false; // Reset visibility state

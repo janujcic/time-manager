@@ -89,6 +89,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ status: "success", data: result.timeSessions || [] });
     });
     return true;
+  } else if (request.action === "clearSessions") {
+    clearSessions();
+    sendResponse({ status: "cleared" });
   }
 });
 
@@ -119,5 +122,11 @@ function saveSession(task, newTime) {
 
     // Save updated sessions back to storage
     chrome.storage.local.set({ timeSessions: existingSessions });
+  });
+}
+
+function clearSessions() {
+  chrome.storage.local.set({ timeSessions: [] }, () => {
+    console.log("All sessions cleared.");
   });
 }
