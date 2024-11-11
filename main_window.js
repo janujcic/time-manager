@@ -30,6 +30,15 @@ document.getElementById("start-button").addEventListener("click", function () {
       document.getElementById("finish-button").style.display = "inline";
     }
   });
+
+  // Send a message to start the timer in the background
+  chrome.runtime.sendMessage({ action: "start", taskName }, (response) => {
+    if (response.status === "started") {
+      // Open the standalone timer window
+      window.open("timer_window.html", "Task Timer", "width=300,height=200");
+      window.close(); // Close the popup
+    }
+  });
 });
 
 document.getElementById("finish-button").addEventListener("click", function () {

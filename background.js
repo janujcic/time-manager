@@ -4,29 +4,78 @@ let timerData = {
   isRunning: false,
   elapsedTime: 0,
 };
+let timerInterval = null;
+
+function broadcastTimerUpdate() {
+  console.log("Broadcasted!");
+  const elapsedTimeFormatted = transferSecondsToTime(timerData.elapsedTime);
+  chrome.runtime.sendMessage({
+    action: "updateTime",
+    elapsedTime: elapsedTimeFormatted,
+  });
+}
 
 function startTimer(taskName) {
-  if (!timerData.isRunning) {
-    timerData.savedTaskName = taskName;
-    timerData.startTime = new Date().getTime();
-    timerData.isRunning = true;
+  // Prevent duplicate intervals
+  if (timerData.isRunning || timerInterval !== null) {
+    console.log("Timer already running or interval not cleared.");
+    return;
   }
+
+  timerData.savedTaskName = taskName;
+  timerData.startTime = new Date().getTime();
+  timerData.isRunning = true;
+
+  console.log("Starting timer for task:", taskName);
+
+  timerInterval = setInterval(() => {
+    const currentTime = new Date().getTime();
+    timerData.elapsedTime += currentTime - timerData.startTime;
+    timerData.startTime = currentTime;
+    broadcastTimerUpdate();
+  }, 1000);
+}
+
+function stopTimer() {
+  if (!timerData.isRunning) return;
+
+  console.log("Stopping timer");
+  console.log(timerInterval);
+  clearInterval(timerInterval);
+  timerInterval = null;
+  console.log(timerInterval);
+
+  const endTime = new Date().getTime();
+  timerData.elapsedTime += endTime - timerData.startTime;
+  timerData.isRunning = false;
+  broadcastTimerUpdate();
 }
 
 function finishTimer() {
   if (timerData.isRunning) {
-    const endTime = new Date().getTime();
-    timerData.elapsedTime += endTime - timerData.startTime;
-    timerData.isRunning = false;
-    return timerData.elapsedTime;
+    stopTimer();
   }
-  return null;
+  saveSession(timerData.savedTaskName, timerData.elapsedTime);
+  const tempTimerData = timerData;
+
+  console.log("Finishing timer for task:", timerData.savedTaskName);
+
+  timerData = {
+    taskName: "",
+    startTime: null,
+    isRunning: false,
+    elapsedTime: 0,
+  };
+  return tempTimerData.elapsedTime;
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "start") {
     startTimer(request.taskName);
     sendResponse({ status: "started" });
+  } else if (request.action === "stop") {
+    stopTimer();
+    sendResponse({ status: "stopped" });
   } else if (request.action === "finish") {
     const elapsedTime = finishTimer();
     sendResponse({ status: "finished", elapsedTime });
@@ -34,3 +83,33 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ timerData });
   }
 });
+
+function transferSecondsToTime(miliseconds) {
+  // convert to seconds
+  const seconds = Math.floor(miliseconds / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+
+  return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+}
+
+function saveSession(task, newTime) {
+  const existingSessions =
+    JSON.parse(localStorage.getItem("timeSessions")) || [];
+  const taskIndex = existingSessions.findIndex(
+    (session) => session.task === task
+  );
+
+  if (taskIndex !== -1) {
+    // If task exists, sum the times
+    const existingTime = existingSessions[taskIndex].duration;
+    const totalDuration = existingTime + newTime;
+    existingSessions[taskIndex].duration = totalDuration;
+  } else {
+    // If task doesn't exist, add as new entry
+    existingSessions.push({ task, duration: newTime });
+  }
+
+  // Save updated sessions back to local storage
+  localStorage.setItem("timeSessions", JSON.stringify(existingSessions));
+}
