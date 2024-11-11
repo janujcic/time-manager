@@ -56,39 +56,29 @@ document.getElementById("finish-button").addEventListener("click", function () {
       document.body.appendChild(resultDisplay);
 
       // Save session to local storage with summing if task matches
-      saveSession(taskName, response.elapsedTime);
+      saveSessionInBackground(taskName, response.elapsedTime);
     }
   });
 });
 
-function saveSession(task, newTime) {
-  const existingSessions =
-    JSON.parse(localStorage.getItem("timeSessions")) || [];
-  const taskIndex = existingSessions.findIndex(
-    (session) => session.task === task
+function saveSessionInBackground(task, newTime) {
+  chrome.runtime.sendMessage(
+    { action: "saveSession", task, newTime },
+    (response) => {
+      if (response.status === "success") {
+        console.log("Session saved successfully in background.");
+      }
+    }
   );
-
-  if (taskIndex !== -1) {
-    // If task exists, sum the times
-    const existingTime = existingSessions[taskIndex].duration;
-    const totalDuration = existingTime + newTime;
-    existingSessions[taskIndex].duration = totalDuration;
-  } else {
-    // If task doesn't exist, add as new entry
-    existingSessions.push({ task, duration: newTime });
-  }
-
-  // Save updated sessions back to local storage
-  localStorage.setItem("timeSessions", JSON.stringify(existingSessions));
 }
 
-function transferSecondsToTime(miliseconds) {
-  // convert to seconds
-  const seconds = Math.floor(miliseconds / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-
-  return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+function getSessionsFromBackground(callback) {
+  chrome.runtime.sendMessage({ action: "getSessions" }, (response) => {
+    if (response.status === "success") {
+      const sessions = response.data;
+      callback(sessions);
+    }
+  });
 }
 
 document
@@ -101,20 +91,22 @@ document
       logDisplay.innerHTML = "";
     } else {
       // Show log if not visible
-      logDisplay.innerHTML = ""; // Clear existing entries
 
-      const sessions = JSON.parse(localStorage.getItem("timeSessions")) || [];
-      if (sessions.length === 0) {
-        logDisplay.innerText = "No recorded sessions yet.";
-      } else {
-        sessions.forEach((session, index) => {
-          const sessionEntry = document.createElement("p");
-          sessionEntry.innerText = `Task ${index + 1}: ${session.task} - ${
-            session.duration
-          }`;
-          logDisplay.appendChild(sessionEntry);
-        });
-      }
+      getSessionsFromBackground((sessions) => {
+        logDisplay.innerHTML = ""; // Clear existing entries
+
+        if (sessions.length === 0) {
+          logDisplay.innerText = "No recorded sessions yet.";
+        } else {
+          sessions.forEach((session, index) => {
+            const sessionEntry = document.createElement("p");
+            sessionEntry.innerText = `Task ${index + 1}: ${session.task} - ${
+              session.duration
+            }`;
+            logDisplay.appendChild(sessionEntry);
+          });
+        }
+      });
     }
 
     isLogVisible = !isLogVisible; // Toggle visibility state

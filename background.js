@@ -81,6 +81,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ status: "finished", elapsedTime });
   } else if (request.action === "checkStatus") {
     sendResponse({ timerData });
+  } else if (request.action === "saveSession") {
+    saveSession(request.task, request.newTime);
+    sendResponse({ status: "success" });
+  } else if (request.action === "getSessions") {
+    chrome.storage.local.get("timeSessions", (result) => {
+      sendResponse({ status: "success", data: result.timeSessions || [] });
+    });
+    return true;
   }
 });
 
@@ -94,22 +102,22 @@ function transferSecondsToTime(miliseconds) {
 }
 
 function saveSession(task, newTime) {
-  const existingSessions =
-    JSON.parse(localStorage.getItem("timeSessions")) || [];
-  const taskIndex = existingSessions.findIndex(
-    (session) => session.task === task
-  );
+  // Retrieve existing sessions
+  chrome.storage.local.get("timeSessions", (result) => {
+    const existingSessions = result.timeSessions || [];
+    const taskIndex = existingSessions.findIndex(
+      (session) => session.task === task
+    );
 
-  if (taskIndex !== -1) {
-    // If task exists, sum the times
-    const existingTime = existingSessions[taskIndex].duration;
-    const totalDuration = existingTime + newTime;
-    existingSessions[taskIndex].duration = totalDuration;
-  } else {
-    // If task doesn't exist, add as new entry
-    existingSessions.push({ task, duration: newTime });
-  }
+    if (taskIndex !== -1) {
+      // If task exists, add the times
+      existingSessions[taskIndex].duration += newTime;
+    } else {
+      // New task entry
+      existingSessions.push({ task, duration: newTime });
+    }
 
-  // Save updated sessions back to local storage
-  localStorage.setItem("timeSessions", JSON.stringify(existingSessions));
+    // Save updated sessions back to storage
+    chrome.storage.local.set({ timeSessions: existingSessions });
+  });
 }
