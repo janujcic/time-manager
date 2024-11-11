@@ -13,7 +13,7 @@ function startTimer(taskName) {
   }
 }
 
-function stopTimer() {
+function finishTimer() {
   if (timerData.isRunning) {
     const endTime = new Date().getTime();
     timerData.elapsedTime += endTime - timerData.startTime;
@@ -27,9 +27,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "start") {
     startTimer(request.taskName);
     sendResponse({ status: "started" });
-  } else if (request.action === "stop") {
-    const elapsedTime = stopTimer();
-    sendResponse({ status: "stopped", elapsedTime });
+  } else if (request.action === "finish") {
+    const elapsedTime = finishTimer();
+    sendResponse({ status: "finished", elapsedTime });
   } else if (request.action === "checkStatus") {
     sendResponse({ timerData });
   }

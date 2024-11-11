@@ -10,13 +10,13 @@ document.addEventListener("DOMContentLoaded", function () {
       taskName = savedTaskName;
       document.getElementById("task_name").value = taskName;
       document.getElementById("start-button").style.display = "none";
-      document.getElementById("stop-button").style.display = "inline";
+      document.getElementById("finish-button").style.display = "inline";
     }
   });
 });
 
 document.getElementById("start-button").addEventListener("click", function () {
-  const taskName = document.getElementById("task_name").value.trim();
+  taskName = document.getElementById("task_name").value.trim();
   if (!taskName) {
     alert("Please enter a task name before starting the timer.");
     return;
@@ -27,16 +27,16 @@ document.getElementById("start-button").addEventListener("click", function () {
     console.log(response);
     if (response.status === "started") {
       document.getElementById("start-button").style.display = "none";
-      document.getElementById("stop-button").style.display = "inline";
+      document.getElementById("finish-button").style.display = "inline";
     }
   });
 });
 
-document.getElementById("stop-button").addEventListener("click", function () {
+document.getElementById("finish-button").addEventListener("click", function () {
   // Send a message to stop the timer in the background
-  chrome.runtime.sendMessage({ action: "stop" }, (response) => {
-    if (response.status === "stopped") {
-      document.getElementById("stop-button").style.display = "none";
+  chrome.runtime.sendMessage({ action: "finish" }, (response) => {
+    if (response.status === "finished") {
+      document.getElementById("finish-button").style.display = "none";
       document.getElementById("start-button").style.display = "inline";
 
       // Display elapsed time

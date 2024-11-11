@@ -7,7 +7,7 @@
   cursor: pointer; /* Pointer cursor */
 }
 
-#stop-button {
+#finish-button {
   background-color: #f44336; /* Red background */
   color: white; /* White text */
   padding: 10px 20px; /* Padding for button size */
@@ -20,6 +20,6 @@
   background-color: #45a049; /* Darker green on hover */
 }
 
-#stop-button:hover {
+#finish-button:hover {
   background-color: #d32f2f; /* Darker red on hover */
 }
