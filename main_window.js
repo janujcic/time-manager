@@ -35,11 +35,23 @@ document.getElementById("start-button").addEventListener("click", function () {
   chrome.runtime.sendMessage({ action: "start", taskName }, (response) => {
     if (response.status === "started") {
       // Open the standalone timer window
-      window.open("timer_window.html", "Task Timer", "width=300,height=200");
+      openTimerWindow();
       window.close(); // Close the popup
     }
   });
 });
+
+function openTimerWindow() {
+  chrome.windows.create({
+    url: "timer_window.html",
+    type: "popup",
+    width: 300,
+    height: 200,
+    left: screen.availWidth - 320, // Position 20px from the right
+    top: screen.availHeight - 240, // Position 40px from the bottom
+    focused: true,
+  });
+}
 
 document.getElementById("finish-button").addEventListener("click", function () {
   // Send a message to stop the timer in the background
@@ -76,7 +88,20 @@ document
   .getElementById("show-log-button")
   .addEventListener("click", function () {
     const logDisplay = document.getElementById("log-display");
-
-    window.open("time_manager.html", "Time Manager", "width=300,height=200");
+    openTimeManagerWindow();
     window.close(); // Close the popup
   });
+
+function openTimeManagerWindow() {
+  const width = 500;
+  const height = 400;
+  chrome.windows.create({
+    url: "time_manager.html",
+    type: "popup",
+    width: width,
+    height: height,
+    left: Math.round((screen.availWidth - width) / 2),
+    top: Math.round((screen.availHeight - height) / 2),
+    focused: true,
+  });
+}
