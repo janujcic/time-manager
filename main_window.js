@@ -72,59 +72,11 @@ function saveSessionInBackground(task, newTime) {
   );
 }
 
-function getSessionsFromBackground(callback) {
-  chrome.runtime.sendMessage({ action: "getSessions" }, (response) => {
-    if (response.status === "success") {
-      const sessions = response.data;
-      callback(sessions);
-    }
-  });
-}
-
-function clearSessionsInBackground() {
-  chrome.runtime.sendMessage({ action: "clearSessions" }, (response) => {
-    if (response.status === "cleared") {
-      console.log("Sessions cleared from storage.");
-    }
-  });
-}
-
 document
   .getElementById("show-log-button")
   .addEventListener("click", function () {
     const logDisplay = document.getElementById("log-display");
 
-    if (isLogVisible) {
-      // Hide log if already visible
-      logDisplay.innerHTML = "";
-    } else {
-      // Show log if not visible
-
-      getSessionsFromBackground((sessions) => {
-        logDisplay.innerHTML = ""; // Clear existing entries
-
-        if (sessions.length === 0) {
-          logDisplay.innerText = "No recorded sessions yet.";
-        } else {
-          sessions.forEach((session, index) => {
-            const sessionEntry = document.createElement("p");
-            sessionEntry.innerText = `Task ${index + 1}: ${session.task} - ${
-              session.duration
-            }`;
-            logDisplay.appendChild(sessionEntry);
-          });
-        }
-      });
-    }
-
-    isLogVisible = !isLogVisible; // Toggle visibility state
-  });
-
-document
-  .getElementById("clear-log-button")
-  .addEventListener("click", function () {
-    clearSessionsInBackground();
-    document.getElementById("log-display").innerText = "Log cleared."; // Update display
-
-    isLogVisible = false; // Reset visibility state
+    window.open("time_manager.html", "Time Manager", "width=300,height=200");
+    window.close(); // Close the popup
   });

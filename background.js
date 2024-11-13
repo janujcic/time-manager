@@ -8,7 +8,9 @@ let timerInterval = null;
 
 function broadcastTimerUpdate() {
   console.log("Broadcasted!");
-  const elapsedTimeFormatted = transferSecondsToTime(timerData.elapsedTime);
+  const elapsedTimeFormatted = transformMilisecondsToTime(
+    timerData.elapsedTime
+  );
   chrome.runtime.sendMessage({
     action: "updateTime",
     elapsedTime: elapsedTimeFormatted,
@@ -95,7 +97,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-function transferSecondsToTime(miliseconds) {
+function transformMilisecondsToTime(miliseconds) {
   // convert to seconds
   const seconds = Math.floor(miliseconds / 1000);
   const minutes = Math.floor(seconds / 60);
