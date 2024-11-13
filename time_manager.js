@@ -32,7 +32,7 @@ document
     clearSessionsInBackground();
     document.getElementById("log-display").innerText = "Log cleared."; // Update display
 
-    isLogVisible = false; // Reset visibility state
+    isLogVisible = false;
   });
 
 function getSessionsFromBackground(callback) {
