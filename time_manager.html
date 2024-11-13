@@ -2,10 +2,17 @@
 <html>
   <head>
     <title>Time Manager</title>
-    <link rel="stylesheet" href="main_window.css" />
+    <link rel="stylesheet" href="time_manager.css" />
   </head>
   <h2>Performed tasks</h2>
   <div id="log-display"></div>
   <button id="clear-log-button">Clear Log</button>
+  <div id="confirmation-modal" class="modal">
+    <div class="modal-content">
+      <p>Are you sure you want to clear the log?</p>
+      <button id="yes-button">Yes</button>
+      <button id="no-button">No</button>
+    </div>
+  </div>
   <script src="time_manager.js"></script>
 </html>
