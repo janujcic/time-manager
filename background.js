@@ -7,7 +7,6 @@ let timerData = {
 let timerInterval = null;
 
 function broadcastTimerUpdate() {
-  console.log("Broadcasted!");
   const elapsedTimeFormatted = transformMilisecondsToTime(
     timerData.elapsedTime
   );

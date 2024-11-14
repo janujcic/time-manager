@@ -6,36 +6,36 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("task-name").innerText = taskName;
 
     if (response.timerData.isRunning) {
-      document.getElementById("start-button-timer").style.display = "none";
-      document.getElementById("stop-button-timer").style.display = "inline";
+      document.getElementById("start-button").style.display = "none";
+      document.getElementById("stop-button").style.display = "inline";
     }
   });
 });
 
 // Start button event
-document.getElementById("start-button-timer").addEventListener("click", () => {
+document.getElementById("start-button").addEventListener("click", () => {
   chrome.runtime.sendMessage({ action: "start", taskName }, (response) => {
     console.log(response);
     if (response.status === "started") {
-      document.getElementById("start-button-timer").style.display = "none";
-      document.getElementById("stop-button-timer").style.display = "inline";
+      document.getElementById("start-button").style.display = "none";
+      document.getElementById("stop-button").style.display = "inline";
     }
   });
 });
 
 // Stop button event
-document.getElementById("stop-button-timer").addEventListener("click", () => {
+document.getElementById("stop-button").addEventListener("click", () => {
   chrome.runtime.sendMessage({ action: "stop" }, (response) => {
     console.log(response);
     if (response.status === "stopped") {
-      document.getElementById("start-button-timer").style.display = "inline";
-      document.getElementById("stop-button-timer").style.display = "none";
+      document.getElementById("start-button").style.display = "inline";
+      document.getElementById("stop-button").style.display = "none";
     }
   });
 });
 
 // Finish button event
-document.getElementById("finish-button-timer").addEventListener("click", () => {
+document.getElementById("finish-button").addEventListener("click", () => {
   chrome.runtime.sendMessage({ action: "finish" }, (response) => {
     if (response.status === "finished") {
       window.close(); // Close the standalone window
