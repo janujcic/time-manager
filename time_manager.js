@@ -3,7 +3,7 @@ const confirmationModal = document.getElementById("confirmation-modal");
 document.addEventListener("DOMContentLoaded", function () {
   getSessionsFromBackground((sessions) => {
     const logDisplay = document.getElementById("log-display");
-
+    sessions.sort((a, b) => b.duration - a.duration);
     if (sessions.length === 0) {
       logDisplay.innerText = "No recorded sessions yet.";
     } else {
