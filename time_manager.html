@@ -4,8 +4,21 @@
     <title>Time Manager</title>
     <link rel="stylesheet" href="time_manager.css" />
   </head>
-  <h2>Performed tasks</h2>
-  <div id="log-display"></div>
+    <h2>Task Log</h2>
+    <div id="log-display"></div>
+    <table id="task-log-table">
+      <thead>
+        <tr>
+          <th>Task nr.</th>
+          <th>Task Name</th>
+          <th>Duration</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Entries will be added here dynamically -->
+      </tbody>
+    </table>
+  </div>
   <button id="clear-log-button">Clear Log</button>
   <div id="confirmation-modal" class="modal">
     <div class="modal-content">
