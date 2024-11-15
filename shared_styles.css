@@ -1,10 +1,10 @@
 button {
-  padding: 10px 20px; /* Uniform padding for all buttons */
+  padding: 10px 10px; /* Uniform padding for all buttons */
   color: white; /* White text */
   border: none; /* Remove border */
   border-radius: 5px; /* Rounded corners */
   cursor: pointer; /* Pointer cursor */
-  margin: 10px auto 0; /* Space above and center align */
+  margin: 5px auto 0; /* Space above and center align */
 }
 
 /* Main button styles */
@@ -37,6 +37,27 @@ button {
 
 #clear-log-button:hover {
   background-color: #0254ce;
+}
+
+#show-log-button {
+  display: block;
+  background-color: #2f71d3;
+}
+
+#show-log-button:hover {
+  background-color: #0254ce;
+}
+
+.timer-button-container {
+  display: block;
+  gap: 10px; /* Adds spacing between buttons */
+}
+
+.main-buttons {
+  display: flex; /* Enables flexbox layout */
+  justify-content: center; /* Centers buttons horizontally */
+  gap: 5px; /* Adds spacing between buttons */
+  margin-top: 20px; /* Space between buttons and other elements */
 }
 
 .modal {
