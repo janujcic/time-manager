@@ -107,23 +107,25 @@ function transformMilisecondsToTime(miliseconds) {
 
 function saveSession(task, newTime) {
   // Retrieve existing sessions
-  chrome.storage.local.get("timeSessions", (result) => {
-    const existingSessions = result.timeSessions || [];
-    const taskIndex = existingSessions.findIndex(
-      (session) => session.task === task
-    );
+  if (newTime != "" && task != "") {
+    chrome.storage.local.get("timeSessions", (result) => {
+      const existingSessions = result.timeSessions || [];
+      const taskIndex = existingSessions.findIndex(
+        (session) => session.task === task
+      );
 
-    if (taskIndex !== -1) {
-      // If task exists, add the times
-      existingSessions[taskIndex].duration += newTime;
-    } else {
-      // New task entry
-      existingSessions.push({ task, duration: newTime });
-    }
+      if (taskIndex !== -1) {
+        // If task exists, add the times
+        existingSessions[taskIndex].duration += newTime;
+      } else {
+        // New task entry
+        existingSessions.push({ task, duration: newTime });
+      }
 
-    // Save updated sessions back to storage
-    chrome.storage.local.set({ timeSessions: existingSessions });
-  });
+      // Save updated sessions back to storage
+      chrome.storage.local.set({ timeSessions: existingSessions });
+    });
+  }
 }
 
 function clearSessions() {
