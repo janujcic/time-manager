@@ -3,7 +3,7 @@ let timerData = {
   startTime: null,
   isRunning: false,
   elapsedTime: 0,
-  lastUpdateTime: "",
+  lastSaved: "",
 };
 let timerInterval = null;
 
@@ -57,16 +57,17 @@ function finishTimer() {
   if (timerData.isRunning) {
     stopTimer();
   }
-  saveSession(timerData.savedTaskName, timerData.elapsedTime);
+  saveSession(timerData);
   const tempTimerData = timerData;
 
   console.log("Finishing timer for task:", timerData.savedTaskName);
 
   timerData = {
-    taskName: "",
+    savedTaskName: "",
     startTime: null,
     isRunning: false,
     elapsedTime: 0,
+    lastSaved: "",
   };
   return tempTimerData.elapsedTime;
 }
@@ -106,9 +107,12 @@ function transformMilisecondsToTime(miliseconds) {
   return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
 }
 
-function saveSession(task, newTime) {
+function saveSession(timer) {
+  const task = timer.savedTaskName;
+  const newTime = timer.elapsedTime;
+  const lastSaved = getCurrentTimeString();
   // Retrieve existing sessions
-  if (newTime != "" && task != "") {
+  if (task != "") {
     chrome.storage.local.get("timeSessions", (result) => {
       const existingSessions = result.timeSessions || [];
       const taskIndex = existingSessions.findIndex(
@@ -118,15 +122,31 @@ function saveSession(task, newTime) {
       if (taskIndex !== -1) {
         // If task exists, add the times
         existingSessions[taskIndex].duration += newTime;
+        existingSessions[taskIndex].lastSaved = lastSaved;
       } else {
         // New task entry
-        existingSessions.push({ task, duration: newTime });
+        existingSessions.push({ task, duration: newTime, lastSaved });
       }
 
       // Save updated sessions back to storage
       chrome.storage.local.set({ timeSessions: existingSessions });
     });
   }
+}
+
+function getCurrentTimeString() {
+  const now = new Date();
+
+  // Format the date and time
+  const options = {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  };
+  return now.toLocaleString(undefined, options).replace(",", "");
 }
 
 function clearSessions() {

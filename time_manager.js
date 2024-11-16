@@ -24,6 +24,10 @@ document.addEventListener("DOMContentLoaded", function () {
         durationCell.innerText = transformMilisecondsToTime(session.duration);
         row.appendChild(durationCell);
 
+        const lastSavedCell = document.createElement("td");
+        lastSavedCell.innerText = session.lastSaved;
+        row.appendChild(lastSavedCell);
+
         logTableBody.appendChild(row);
       });
     }
