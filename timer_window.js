@@ -1,5 +1,6 @@
 // default state when the window opens
 let taskName = "";
+
 document.addEventListener("DOMContentLoaded", function () {
   chrome.runtime.sendMessage({ action: "checkStatus" }, (response) => {
     taskName = response.timerData.savedTaskName;
@@ -49,4 +50,8 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message.action === "updateTime") {
     document.getElementById("elapsed-time").innerText = message.elapsedTime;
   }
+});
+
+window.addEventListener("beforeunload", () => {
+  document.getElementById("finish-button").click();
 });
