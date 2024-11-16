@@ -53,5 +53,6 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 window.addEventListener("beforeunload", () => {
+  // trigger the finish button if the window is closed
   document.getElementById("finish-button").click();
 });
