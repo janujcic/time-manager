@@ -7,10 +7,11 @@ document.addEventListener("DOMContentLoaded", function () {
   chrome.runtime.sendMessage({ action: "checkStatus" }, (response) => {
     const { savedTaskName, isRunning } = response.timerData;
     if (isRunning) {
-      taskName = savedTaskName;
-      document.getElementById("task_name").value = taskName;
-      document.getElementById("start-button").style.display = "none";
-      document.getElementById("finish-button").style.display = "inline";
+      document.querySelector(".enter-start-task").style.display = "none";
+      document.querySelector(".running-task").style.display = "block";
+      document.querySelector(
+        ".running-task"
+      ).textContent = `Task timer for "${savedTaskName}" is currently running. Focus on that task or conclude it by clicking "Finish."`;
     }
   });
 });
@@ -26,8 +27,8 @@ document.getElementById("start-button").addEventListener("click", function () {
   chrome.runtime.sendMessage({ action: "start", taskName }, (response) => {
     console.log(response);
     if (response.status === "started") {
-      document.getElementById("start-button").style.display = "none";
-      document.getElementById("finish-button").style.display = "inline";
+      document.querySelector(".enter-start-task").style.display = "none";
+      document.querySelector(".running-task").style.display = "block";
     }
   });
 
@@ -51,37 +52,6 @@ function openTimerWindow() {
     top: screen.availHeight - 240, // Position 40px from the bottom
     focused: true,
   });
-}
-
-document.getElementById("finish-button").addEventListener("click", function () {
-  // Send a message to stop the timer in the background
-  chrome.runtime.sendMessage({ action: "finish" }, (response) => {
-    if (response.status === "finished") {
-      document.getElementById("finish-button").style.display = "none";
-      document.getElementById("start-button").style.display = "inline";
-
-      // Display elapsed time
-      const resultDisplay = document.createElement("p");
-      resultDisplay.innerText = `Elapsed time for ${taskName}: ${transferSecondsToTime(
-        response.elapsedTime
-      )}`;
-      document.body.appendChild(resultDisplay);
-
-      // Save session to local storage with summing if task matches
-      saveSessionInBackground(taskName, response.elapsedTime);
-    }
-  });
-});
-
-function saveSessionInBackground(task, newTime) {
-  chrome.runtime.sendMessage(
-    { action: "saveSession", task, newTime },
-    (response) => {
-      if (response.status === "success") {
-        console.log("Session saved successfully in background.");
-      }
-    }
-  );
 }
 
 document

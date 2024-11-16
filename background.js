@@ -3,6 +3,7 @@ let timerData = {
   startTime: null,
   isRunning: false,
   elapsedTime: 0,
+  lastUpdateTime: "",
 };
 let timerInterval = null;
 
