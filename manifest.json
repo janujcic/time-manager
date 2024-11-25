@@ -8,6 +8,16 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "main_window.html"
+    "default_popup": "main_window.html",
+    "default_icon": {
+      "16": "icons/time_manager16.png",
+      "48": "icons/time_manager48.png",
+      "128": "icons/time_manager128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/time_manager16.png",
+    "48": "icons/time_manager48.png",
+    "128": "icons/time_manager128.png"
   }
 }
