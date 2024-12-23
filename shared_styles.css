@@ -1,6 +1,6 @@
 button {
   padding: 10px 10px; /* Uniform padding for all buttons */
-  color: white; /* White text */
+  color: white;
   border: none; /* Remove border */
   border-radius: 5px; /* Rounded corners */
   cursor: pointer; /* Pointer cursor */
@@ -9,10 +9,16 @@ button {
 
 /* Main button styles */
 
-#start-button {
+#start-button,
+#yes-button,
+#add-log-button,
+#save-log-button {
   background-color: #4caf50;
 }
-#start-button:hover {
+#start-button:hover,
+#yes-button:hover,
+#add-log-button:hover,
+#save-log-button:hover {
   background-color: #45a049;
 }
 
@@ -23,34 +29,37 @@ button {
   background-color: #ff8c00;
 }
 
-#finish-button {
+#finish-button,
+#no-button,
+#cancel-log-button {
   background-color: #f44336;
 }
-#finish-button:hover {
+#finish-button:hover,
+#no-button:hover,
+#cancel-log-button:hover {
   background-color: #d32f2f;
 }
 
-#clear-log-button {
-  display: block;
-  background-color: #2f71d3;
-}
-
-#clear-log-button:hover {
-  background-color: #0254ce;
-}
-
+#clear-log-button,
 #show-log-button {
   display: block;
   background-color: #2f71d3;
 }
 
+#clear-log-button:hover,
 #show-log-button:hover {
   background-color: #0254ce;
 }
 
 .timer-button-container {
   display: block;
-  gap: 10px; /* Adds spacing between buttons */
+  gap: 10px;
+}
+
+.button-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
 }
 
 .main-buttons {
@@ -58,6 +67,18 @@ button {
   justify-content: center; /* Centers buttons horizontally */
   gap: 5px; /* Adds spacing between buttons */
   margin-top: 20px; /* Space between buttons and other elements */
+}
+
+.task-log > div {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  row-gap: 10px;
+}
+
+label {
+  margin-right: 5px;
 }
 
 .modal {
@@ -79,6 +100,15 @@ button {
   width: 300px;
   border-radius: 8px;
   text-align: center;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.yes-no-button-row {
+  display: flex;
+  gap: 5px;
 }
 
 body {

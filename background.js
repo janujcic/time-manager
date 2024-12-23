@@ -42,10 +42,7 @@ function stopTimer() {
   if (!timerData.isRunning) return;
 
   console.log("Stopping timer");
-  console.log(timerInterval);
-  clearInterval(timerInterval);
   timerInterval = null;
-  console.log(timerInterval);
 
   const endTime = new Date().getTime();
   timerData.elapsedTime += endTime - timerData.startTime;
@@ -87,6 +84,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === "saveSession") {
     saveSession(request.task, request.newTime);
     sendResponse({ status: "success" });
+  } else if (request.action === "saveManualSession") {
+    saveManualSession(request.taskData);
+    sendResponse({ status: "success" });
   } else if (request.action === "getSessions") {
     chrome.storage.local.get("timeSessions", (result) => {
       sendResponse({ status: "success", data: result.timeSessions || [] });
@@ -105,6 +105,37 @@ function transformMilisecondsToTime(miliseconds) {
   const hours = Math.floor(minutes / 60);
 
   return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+}
+
+function saveManualSession(taskData) {
+  const task = taskData.taskName;
+  const newTime = taskData.taskDuration;
+  let lastSaved = taskData.startTime;
+
+  if (lastSaved === "") {
+    lastSaved = getCurrentTimeString();
+  }
+
+  if (task != "") {
+    chrome.storage.local.get("timeSessions", (result) => {
+      const existingSessions = result.timeSessions || [];
+      const taskIndex = existingSessions.findIndex(
+        (session) => session.task === task
+      );
+
+      if (taskIndex !== -1) {
+        // If task exists, add the times
+        existingSessions[taskIndex].duration += newTime;
+        existingSessions[taskIndex].lastSaved = lastSaved;
+      } else {
+        // New task entry
+        existingSessions.push({ task, duration: newTime, lastSaved });
+      }
+
+      // Save updated sessions back to storage
+      chrome.storage.local.set({ timeSessions: existingSessions });
+    });
+  }
 }
 
 function saveSession(timer) {
