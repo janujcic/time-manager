@@ -20,12 +20,43 @@
       </tbody>
     </table>
   </div>
-  <button id="clear-log-button">Clear Log</button>
+  <div class="button-row">
+    <button id="add-log-button">Add Log</button>
+    <button id="clear-log-button">Clear Log</button>
+  </div>
+  
+  <div id="add-log-modal" class="modal">
+  <div class="modal-content">
+    <h2>Enter log details:</h2>
+    <div class="task-log">
+      <div class="task-name">
+        <input type="text" id="task-name" placeholder="Task name">
+      </div>
+      <div class="task-duration">
+        <label for="task-duration-hours">Hours:</label>
+        <select id="task-duration-hours"></select>
+        <label for="task-duration-minutes">Minutes:</label>
+        <select id="task-duration-minutes"></select>
+      </div>
+      <div class="task-time">
+        <label for="task-timedate">Start Time:</label>
+        <input type="datetime-local" id="task-timedate">
+      </div>
+    </div>
+    <div class="button-row">
+      <button id="save-log-button">Save</button>
+      <button id="cancel-log-button">Cancel</button>
+    </div>
+  </div>
+  </div>
+
   <div id="confirmation-modal" class="modal">
     <div class="modal-content">
       <p>Are you sure you want to clear the log?</p>
-      <button id="yes-button">Yes</button>
-      <button id="no-button">No</button>
+      <div class="yes-no-button-row">
+        <button id="yes-button">Yes</button>
+        <button id="no-button">No</button>
+      </div> 
     </div>
   </div>
   <script src="time_manager.js"></script>
