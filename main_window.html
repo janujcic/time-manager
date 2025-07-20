@@ -1,26 +1,29 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <title>Task Manager</title>
-    <link rel="stylesheet" href="shared_styles.css" />
-  </head>
-  <body>
-    <h2>Task Registration</h2>
-    <div class="enter-start-task">
-      <p>What task would you like to focus on?</p>
-      <input type="text" id="task_name" name="taskname" /><br />
-      <p>Click Start to begin tracking time.</p>
-    </div>
-    <div class="running-task" style="display: none">
-      <p>
-        Task timer is currently running. Focus on that task or conclude it by
-        clicking "Finish."
-      </p>
-    </div>
-    <div class="main-buttons">
-      <button id="start-button">Start</button>
-      <button id="show-log-button">Show Log</button>
-    </div>
-    <script src="main_window.js"></script>
-  </body>
+
+<head>
+  <title>Task Manager</title>
+  <link rel="stylesheet" href="shared_styles.css" />
+</head>
+
+<body>
+  <h2>Task Registration</h2>
+  <div class="enter-start-task">
+    <p>What would you like to focus on?</p>
+    <input type="text" id="task_name" name="taskname" /><br />
+    <p>Click Start to begin tracking time.</p>
+  </div>
+  <div class="running-task" style="display: none">
+    <p>
+      Task timer is currently running. Focus on that task or conclude it by
+      clicking "Finish."
+    </p>
+  </div>
+  <div class="main-buttons">
+    <button id="start-button">Start</button>
+    <button id="show-log-button">Show Log</button>
+  </div>
+  <script src="main_window.js"></script>
+</body>
+
 </html>
