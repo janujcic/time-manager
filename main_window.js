@@ -8,6 +8,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const { savedTaskName, isRunning } = response.timerData;
     if (isRunning) {
       document.querySelector(".enter-start-task").style.display = "none";
+      document.querySelector("#start-button").style.display = "none";
       document.querySelector(".running-task").style.display = "block";
       document.querySelector(
         ".running-task"
