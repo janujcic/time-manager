@@ -42,7 +42,10 @@ function stopTimer() {
   if (!timerData.isRunning) return;
 
   console.log("Stopping timer");
-  timerInterval = null;
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
 
   const endTime = new Date().getTime();
   timerData.elapsedTime += endTime - timerData.startTime;
