@@ -3,9 +3,10 @@
   "name": "Time Manager",
   "version": "1.0",
   "description": "A simple time-tracking extension.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "activeTab", "tabs"],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "scripts": ["background.js"]
   },
   "action": {
     "default_popup": "main_window.html",
