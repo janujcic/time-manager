@@ -15,10 +15,13 @@
     <p>Click Start to begin tracking time.</p>
   </div>
   <div class="running-task" style="display: none">
-    <p>
-      Task timer is currently running. Focus on that task or conclude it by
-      clicking "Finish."
-    </p>
+    <p id="running-task-message"></p>
+    <p id="elapsed-time">0h 0m 0s</p>
+    <div class="button-row">
+      <button id="resume-button">Start</button>
+      <button id="stop-button" style="display: none">Stop</button>
+      <button id="finish-button">Finish</button>
+    </div>
   </div>
   <div class="main-buttons">
     <button id="start-button">Start</button>

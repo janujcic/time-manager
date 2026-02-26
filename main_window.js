@@ -1,9 +1,15 @@
-let startTime;
-let elapsedTime = 0;
-let taskName;
-let isLogVisible = false;
+let currentTaskName = "";
+
 const taskNameInput = document.getElementById("task_name");
 const taskNameError = document.getElementById("task-name-error");
+const enterStartTask = document.querySelector(".enter-start-task");
+const runningTask = document.querySelector(".running-task");
+const runningTaskMessage = document.getElementById("running-task-message");
+const elapsedTimeDisplay = document.getElementById("elapsed-time");
+const startButton = document.getElementById("start-button");
+const resumeButton = document.getElementById("resume-button");
+const stopButton = document.getElementById("stop-button");
+const finishButton = document.getElementById("finish-button");
 
 function showTaskNameError(message) {
   taskNameError.textContent = message;
@@ -15,34 +21,114 @@ function clearTaskNameError() {
   taskNameInput.classList.remove("input-error");
 }
 
-document.addEventListener("DOMContentLoaded", function () {
+function transformMilisecondsToTime(miliseconds) {
+  const seconds = Math.floor(miliseconds / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+
+  return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+}
+
+function updateRunningMessage(isRunning) {
+  const stateText = isRunning ? "running" : "paused";
+  runningTaskMessage.textContent = `Task timer for "${currentTaskName}" is ${stateText}.`;
+}
+
+function showRunningState(isRunning) {
+  enterStartTask.style.display = "none";
+  startButton.style.display = "none";
+  runningTask.style.display = "block";
+
+  resumeButton.style.display = isRunning ? "none" : "inline-block";
+  stopButton.style.display = isRunning ? "inline-block" : "none";
+  finishButton.style.display = "inline-block";
+  updateRunningMessage(isRunning);
+}
+
+function showRegistrationState() {
+  runningTask.style.display = "none";
+  enterStartTask.style.display = "block";
+  startButton.style.display = "inline-block";
+  elapsedTimeDisplay.textContent = "0h 0m 0s";
+  currentTaskName = "";
+}
+
+function refreshFromBackground() {
   chrome.runtime.sendMessage({ action: "checkStatus" }, (response) => {
-    const { savedTaskName, isRunning } = response.timerData;
-    if (isRunning) {
-      document.querySelector(".enter-start-task").style.display = "none";
-      document.querySelector("#start-button").style.display = "none";
-      document.querySelector(".running-task").style.display = "block";
-      document.querySelector(
-        ".running-task"
-      ).textContent = `Task timer for "${savedTaskName}" is currently running. Focus on that task or conclude it by clicking "Finish."`;
+    const timerData = response?.timerData;
+    if (!timerData) {
+      showRegistrationState();
+      return;
+    }
+
+    currentTaskName = timerData.savedTaskName || "";
+    elapsedTimeDisplay.textContent = transformMilisecondsToTime(
+      timerData.elapsedTime || 0
+    );
+
+    if (currentTaskName) {
+      showRunningState(Boolean(timerData.isRunning));
+    } else {
+      showRegistrationState();
     }
   });
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  refreshFromBackground();
 });
 
-document.getElementById("start-button").addEventListener("click", function () {
-  taskName = taskNameInput.value.trim();
+startButton.addEventListener("click", function () {
+  const taskName = taskNameInput.value.trim();
   if (!taskName) {
     showTaskNameError("Please enter a task name before starting the timer.");
     return;
   }
-  clearTaskNameError();
 
-  // Send a message to start the timer in the background
+  clearTaskNameError();
   chrome.runtime.sendMessage({ action: "start", taskName }, (response) => {
-    if (response.status === "started") {
-      // Open the standalone timer window
-      openTimerWindow();
-      window.close(); // Close the popup
+    if (response?.status === "started") {
+      currentTaskName = taskName;
+      showRunningState(true);
+      refreshFromBackground();
+    } else {
+      showTaskNameError(response?.message || "Unable to start timer.");
+    }
+  });
+});
+
+resumeButton.addEventListener("click", function () {
+  if (!currentTaskName) {
+    showRegistrationState();
+    return;
+  }
+
+  chrome.runtime.sendMessage(
+    { action: "start", taskName: currentTaskName },
+    (response) => {
+      if (response?.status === "started") {
+        showRunningState(true);
+        refreshFromBackground();
+      }
+    }
+  );
+});
+
+stopButton.addEventListener("click", function () {
+  chrome.runtime.sendMessage({ action: "stop" }, (response) => {
+    if (response?.status === "stopped") {
+      showRunningState(false);
+      refreshFromBackground();
+    }
+  });
+});
+
+finishButton.addEventListener("click", function () {
+  chrome.runtime.sendMessage({ action: "finish" }, (response) => {
+    if (response?.status === "finished") {
+      showRegistrationState();
+      taskNameInput.value = "";
+      clearTaskNameError();
     }
   });
 });
@@ -53,24 +139,17 @@ taskNameInput.addEventListener("input", () => {
   }
 });
 
-function openTimerWindow() {
-  chrome.windows.create({
-    url: "timer_window.html",
-    type: "popup",
-    width: 300,
-    height: 200,
-    left: screen.availWidth - 320, // Position 20px from the right
-    top: screen.availHeight - 240, // Position 40px from the bottom
-    focused: true,
-  });
-}
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.action === "updateTime" && runningTask.style.display !== "none") {
+    elapsedTimeDisplay.textContent = message.elapsedTime;
+  }
+});
 
 document
   .getElementById("show-log-button")
   .addEventListener("click", function () {
-    const logDisplay = document.getElementById("log-display");
     openTimeManagerWindow();
-    window.close(); // Close the popup
+    window.close();
   });
 
 function openTimeManagerWindow() {
@@ -79,8 +158,8 @@ function openTimeManagerWindow() {
   chrome.windows.create({
     url: "time_manager.html",
     type: "popup",
-    width: width,
-    height: height,
+    width,
+    height,
     left: Math.round((screen.availWidth - width) / 2),
     top: Math.round((screen.availHeight - height) / 2),
     focused: true,

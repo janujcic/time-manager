@@ -62,6 +62,12 @@ button {
   margin-top: 10px;
 }
 
+#elapsed-time {
+  font-size: 20px;
+  font-weight: bold;
+  margin: 8px 0 0;
+}
+
 .main-buttons {
   display: flex; /* Enables flexbox layout */
   justify-content: center; /* Centers buttons horizontally */
