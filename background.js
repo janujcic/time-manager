@@ -272,21 +272,32 @@ async function getMergedAggregatedSessions() {
 
 async function saveManualSession(taskData) {
   const task = (taskData.taskName || "").trim();
-  const durationMs = Number(taskData.taskDuration);
   const rawStartMs = taskData.startTimeMs ?? taskData.startTime;
+  const rawEndMs = taskData.endTimeMs;
   const startMs = Number(rawStartMs);
+  const endMsFromInput = Number(rawEndMs);
+  const durationFromInput = Number(taskData.taskDuration);
 
   if (!task) {
     return { status: "error", message: "Task name is required." };
-  }
-  if (!Number.isFinite(durationMs) || durationMs <= 0) {
-    return { status: "error", message: "Duration must be greater than zero." };
   }
   if (!Number.isFinite(startMs)) {
     return { status: "error", message: "Start time is required." };
   }
 
-  const endMs = startMs + durationMs;
+  let endMs;
+  if (Number.isFinite(endMsFromInput)) {
+    endMs = endMsFromInput;
+  } else if (Number.isFinite(durationFromInput) && durationFromInput > 0) {
+    endMs = startMs + durationFromInput;
+  } else {
+    return { status: "error", message: "End time is required." };
+  }
+
+  if (endMs <= startMs) {
+    return { status: "error", message: "End time must be after start time." };
+  }
+
   const block = createTimeBlock(task, startMs, endMs, "manual");
   await appendTimeBlock(block);
 

@@ -108,28 +108,26 @@
   </div>
 
   <div class="button-row">
-    <button id="add-log-button">Add Log</button>
+    <button id="add-log-button">Add Time Block</button>
     <button id="clear-log-button">Clear Log</button>
   </div>
 
   <div id="add-log-modal" class="modal">
     <div class="modal-content">
-      <h2>Enter log details:</h2>
+      <h2>Add time block</h2>
       <p id="manual-log-error" class="field-error" role="alert" aria-live="polite"></p>
       <p id="manual-log-success" class="field-success" aria-live="polite"></p>
       <div class="task-log">
         <div class="task-name">
           <input type="text" id="task-name" placeholder="Task name" />
         </div>
-        <div class="task-duration">
-          <label for="task-duration-hours">Hours:</label>
-          <select id="task-duration-hours"></select>
-          <label for="task-duration-minutes">Minutes:</label>
-          <select id="task-duration-minutes"></select>
+        <div class="task-time">
+          <label for="task-start-datetime">Start Time:</label>
+          <input type="datetime-local" id="task-start-datetime" />
         </div>
         <div class="task-time">
-          <label for="task-timedate">Start Time:</label>
-          <input type="datetime-local" id="task-timedate" />
+          <label for="task-end-datetime">End Time:</label>
+          <input type="datetime-local" id="task-end-datetime" />
         </div>
       </div>
       <div class="button-row">

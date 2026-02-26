@@ -3,9 +3,8 @@ const addLogModal = document.getElementById("add-log-modal");
 const manualLogError = document.getElementById("manual-log-error");
 const manualLogSuccess = document.getElementById("manual-log-success");
 const taskNameInput = document.getElementById("task-name");
-const taskDurationHoursInput = document.getElementById("task-duration-hours");
-const taskDurationMinutesInput = document.getElementById("task-duration-minutes");
-const taskDateInput = document.getElementById("task-timedate");
+const taskStartDatetimeInput = document.getElementById("task-start-datetime");
+const taskEndDatetimeInput = document.getElementById("task-end-datetime");
 
 const rangePresetSelect = document.getElementById("range-preset");
 const customRangeControls = document.getElementById("custom-range-controls");
@@ -21,13 +20,11 @@ const kpiTaskCount = document.getElementById("kpi-task-count");
 const kpiBlockCount = document.getElementById("kpi-block-count");
 const kpiAvgBlock = document.getElementById("kpi-avg-block");
 
-let durationOptionsInitialized = false;
 let allBlocks = [];
 let filteredBlocks = [];
 let legacySessions = [];
 
 document.addEventListener("DOMContentLoaded", () => {
-  initializeDurationOptions();
   bindDashboardEvents();
   rebuildDashboard();
 });
@@ -341,27 +338,6 @@ function rebuildDashboard() {
   });
 }
 
-function generateOptions(selectElement, start, end) {
-  for (let i = start; i <= end; i++) {
-    const option = document.createElement("option");
-    option.value = i;
-    option.textContent = i;
-    selectElement.appendChild(option);
-  }
-}
-
-function initializeDurationOptions() {
-  if (durationOptionsInitialized) {
-    return;
-  }
-
-  generateOptions(taskDurationHoursInput, 0, 12);
-  generateOptions(taskDurationMinutesInput, 0, 59);
-  taskDurationHoursInput.value = 0;
-  taskDurationMinutesInput.value = 0;
-  durationOptionsInitialized = true;
-}
-
 function setManualError(message) {
   manualLogError.textContent = message;
   manualLogSuccess.textContent = "";
@@ -379,16 +355,14 @@ function clearManualMessages() {
 
 function clearManualInputBorders() {
   taskNameInput.classList.remove("input-error");
-  taskDurationHoursInput.classList.remove("input-error");
-  taskDurationMinutesInput.classList.remove("input-error");
-  taskDateInput.classList.remove("input-error");
+  taskStartDatetimeInput.classList.remove("input-error");
+  taskEndDatetimeInput.classList.remove("input-error");
 }
 
 function resetManualForm() {
   taskNameInput.value = "";
-  taskDurationHoursInput.value = 0;
-  taskDurationMinutesInput.value = 0;
-  taskDateInput.value = "";
+  taskStartDatetimeInput.value = "";
+  taskEndDatetimeInput.value = "";
   clearManualInputBorders();
 }
 
@@ -416,35 +390,43 @@ document.getElementById("save-log-button").addEventListener("click", () => {
   clearManualInputBorders();
 
   const taskName = taskNameInput.value.trim();
-  const taskDurationHours = Number(taskDurationHoursInput.value);
-  const taskDurationMinutes = Number(taskDurationMinutesInput.value);
-  const taskDateValue = taskDateInput.value;
-  const taskStartMs = Date.parse(taskDateValue);
+  const taskStartValue = taskStartDatetimeInput.value;
+  const taskEndValue = taskEndDatetimeInput.value;
+  const taskStartMs = Date.parse(taskStartValue);
+  const taskEndMs = Date.parse(taskEndValue);
 
   if (!taskName) {
     taskNameInput.classList.add("input-error");
     setManualError("Task name is required.");
     return;
   }
-  if (taskDurationHours === 0 && taskDurationMinutes === 0) {
-    taskDurationHoursInput.classList.add("input-error");
-    taskDurationMinutesInput.classList.add("input-error");
-    setManualError("Please enter a duration greater than zero.");
+  if (!taskStartValue || Number.isNaN(taskStartMs)) {
+    taskStartDatetimeInput.classList.add("input-error");
+    setManualError("Start time is required.");
     return;
   }
-  if (!taskDateValue || Number.isNaN(taskStartMs)) {
-    taskDateInput.classList.add("input-error");
-    setManualError("Start time is required for manual logs.");
+  if (!taskEndValue || Number.isNaN(taskEndMs)) {
+    taskEndDatetimeInput.classList.add("input-error");
+    setManualError("End time is required.");
     return;
   }
-
-  const totalDuration =
-    taskDurationHours * 60 * 60 * 1000 + taskDurationMinutes * 60 * 1000;
+  if (taskEndMs <= taskStartMs) {
+    taskStartDatetimeInput.classList.add("input-error");
+    taskEndDatetimeInput.classList.add("input-error");
+    setManualError("End time must be after start time.");
+    return;
+  }
+  const totalDuration = taskEndMs - taskStartMs;
 
   chrome.runtime.sendMessage(
     {
       action: "saveManualSession",
-      taskData: { taskName, taskDuration: totalDuration, startTimeMs: taskStartMs },
+      taskData: {
+        taskName,
+        taskDuration: totalDuration,
+        startTimeMs: taskStartMs,
+        endTimeMs: taskEndMs,
+      },
     },
     (response) => {
       if (!response || response.status !== "success") {
