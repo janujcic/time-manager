@@ -1,10 +1,11 @@
-const confirmationModal = document.getElementById("confirmation-modal");
 const addLogModal = document.getElementById("add-log-modal");
+const addLogModalTitle = document.getElementById("add-log-modal-title");
+const saveLogButton = document.getElementById("save-log-button");
 const manualLogError = document.getElementById("manual-log-error");
-const manualLogSuccess = document.getElementById("manual-log-success");
 const taskNameInput = document.getElementById("task-name");
 const taskStartDatetimeInput = document.getElementById("task-start-datetime");
 const taskEndDatetimeInput = document.getElementById("task-end-datetime");
+const blockLogTableBody = document.querySelector("#block-log-table tbody");
 
 const rangePresetSelect = document.getElementById("range-preset");
 const customRangeControls = document.getElementById("custom-range-controls");
@@ -23,6 +24,7 @@ const kpiAvgBlock = document.getElementById("kpi-avg-block");
 let allBlocks = [];
 let filteredBlocks = [];
 let legacySessions = [];
+let editingBlockId = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   bindDashboardEvents();
@@ -43,6 +45,8 @@ function bindDashboardEvents() {
   applyCustomRangeButton.addEventListener("click", () => {
     applyFiltersAndRender();
   });
+
+  blockLogTableBody.addEventListener("click", onBlockActionClick);
 }
 
 function transformMilisecondsToTime(miliseconds) {
@@ -55,6 +59,12 @@ function transformMilisecondsToTime(miliseconds) {
 
 function formatDateTime(ms) {
   return new Date(ms).toLocaleString();
+}
+
+function toDatetimeLocalValue(ms) {
+  const date = new Date(ms);
+  const tzOffsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - tzOffsetMs).toISOString().slice(0, 16);
 }
 
 function formatDateOnly(ms) {
@@ -288,7 +298,7 @@ function renderBlockTable() {
   if (rows.length === 0) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 6;
+    cell.colSpan = 7;
     cell.textContent = "No time blocks for selected range.";
     row.appendChild(cell);
     tableBody.appendChild(row);
@@ -304,6 +314,10 @@ function renderBlockTable() {
       <td>${formatDateTime(block.endMs)}</td>
       <td>${transformMilisecondsToTime(block.durationMs)}</td>
       <td>${block.source}</td>
+      <td class="block-actions">
+        <button class="edit-block-button" data-action="edit" data-block-id="${block.id}">Edit</button>
+        <button class="remove-block-button" data-action="remove" data-block-id="${block.id}">X</button>
+      </td>
     `;
     tableBody.appendChild(row);
   });
@@ -340,17 +354,10 @@ function rebuildDashboard() {
 
 function setManualError(message) {
   manualLogError.textContent = message;
-  manualLogSuccess.textContent = "";
-}
-
-function setManualSuccess(message) {
-  manualLogSuccess.textContent = message;
-  manualLogError.textContent = "";
 }
 
 function clearManualMessages() {
   manualLogError.textContent = "";
-  manualLogSuccess.textContent = "";
 }
 
 function clearManualInputBorders() {
@@ -363,29 +370,67 @@ function resetManualForm() {
   taskNameInput.value = "";
   taskStartDatetimeInput.value = "";
   taskEndDatetimeInput.value = "";
+  editingBlockId = null;
+  addLogModalTitle.textContent = "Add time block";
+  saveLogButton.textContent = "Save Block";
   clearManualInputBorders();
 }
 
-document.getElementById("clear-log-button").addEventListener("click", () => {
-  confirmationModal.style.display = "block";
-});
+function onBlockActionClick(event) {
+  const button = event.target.closest("button[data-action]");
+  if (!button) {
+    return;
+  }
 
-document.getElementById("yes-button").addEventListener("click", () => {
-  clearSessionsInBackground();
-  confirmationModal.style.display = "none";
-});
+  const action = button.getAttribute("data-action");
+  const blockId = button.getAttribute("data-block-id");
+  if (!blockId) {
+    return;
+  }
 
-document.getElementById("no-button").addEventListener("click", () => {
-  confirmationModal.style.display = "none";
-});
+  if (action === "edit") {
+    openEditBlockModal(blockId);
+  } else if (action === "remove") {
+    removeBlock(blockId);
+  }
+}
 
-document.getElementById("add-log-button").addEventListener("click", () => {
+function openEditBlockModal(blockId) {
+  const block = allBlocks.find((item) => item.id === blockId);
+  if (!block) {
+    dashboardStatus.textContent = "Unable to find selected block.";
+    return;
+  }
+
+  editingBlockId = block.id;
+  addLogModalTitle.textContent = "Edit time block";
+  saveLogButton.textContent = "Save Changes";
+  taskNameInput.value = block.task;
+  taskStartDatetimeInput.value = toDatetimeLocalValue(block.startMs);
+  taskEndDatetimeInput.value = toDatetimeLocalValue(block.endMs);
   clearManualMessages();
   clearManualInputBorders();
   addLogModal.style.display = "block";
+}
+
+function removeBlock(blockId) {
+  chrome.runtime.sendMessage({ action: "deleteTimeBlock", blockId }, (response) => {
+    if (!response || response.status !== "success") {
+      dashboardStatus.textContent = response?.message || "Unable to remove block.";
+      return;
+    }
+    dashboardStatus.textContent = "Time block removed.";
+    rebuildDashboard();
+  });
+}
+
+document.getElementById("add-log-button").addEventListener("click", () => {
+  resetManualForm();
+  clearManualMessages();
+  addLogModal.style.display = "block";
 });
 
-document.getElementById("save-log-button").addEventListener("click", () => {
+saveLogButton.addEventListener("click", () => {
   clearManualMessages();
   clearManualInputBorders();
 
@@ -418,27 +463,32 @@ document.getElementById("save-log-button").addEventListener("click", () => {
   }
   const totalDuration = taskEndMs - taskStartMs;
 
-  chrome.runtime.sendMessage(
-    {
-      action: "saveManualSession",
-      taskData: {
-        taskName,
-        taskDuration: totalDuration,
-        startTimeMs: taskStartMs,
-        endTimeMs: taskEndMs,
-      },
-    },
-    (response) => {
-      if (!response || response.status !== "success") {
-        setManualError(response?.message || "Unable to save manual session.");
-        return;
-      }
+  const payload = {
+    taskName,
+    taskDuration: totalDuration,
+    startTimeMs: taskStartMs,
+    endTimeMs: taskEndMs,
+  };
 
-      resetManualForm();
-      setManualSuccess("Task saved successfully.");
-      rebuildDashboard();
+  const action = editingBlockId ? "updateTimeBlock" : "saveManualSession";
+  const request = editingBlockId
+    ? { action, blockId: editingBlockId, taskData: payload }
+    : { action, taskData: payload };
+
+  chrome.runtime.sendMessage(request, (response) => {
+    if (!response || response.status !== "success") {
+      setManualError(response?.message || "Unable to save time block.");
+      return;
     }
-  );
+
+    const wasEditing = Boolean(editingBlockId);
+    resetManualForm();
+    addLogModal.style.display = "none";
+    dashboardStatus.textContent = wasEditing
+      ? "Time block updated."
+      : "Time block saved.";
+    rebuildDashboard();
+  });
 });
 
 document.getElementById("cancel-log-button").addEventListener("click", () => {
@@ -446,12 +496,3 @@ document.getElementById("cancel-log-button").addEventListener("click", () => {
   clearManualMessages();
   resetManualForm();
 });
-
-function clearSessionsInBackground() {
-  chrome.runtime.sendMessage({ action: "clearSessions" }, (response) => {
-    if (response && response.status === "cleared") {
-      dashboardStatus.textContent = "Log cleared.";
-      rebuildDashboard();
-    }
-  });
-}

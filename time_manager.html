@@ -100,6 +100,7 @@
             <th>End</th>
             <th>Duration</th>
             <th>Source</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -109,14 +110,12 @@
 
   <div class="button-row">
     <button id="add-log-button">Add Time Block</button>
-    <button id="clear-log-button">Clear Log</button>
   </div>
 
   <div id="add-log-modal" class="modal">
     <div class="modal-content">
-      <h2>Add time block</h2>
+      <h2 id="add-log-modal-title">Add time block</h2>
       <p id="manual-log-error" class="field-error" role="alert" aria-live="polite"></p>
-      <p id="manual-log-success" class="field-success" aria-live="polite"></p>
       <div class="task-log">
         <div class="task-name">
           <input type="text" id="task-name" placeholder="Task name" />
@@ -131,18 +130,8 @@
         </div>
       </div>
       <div class="button-row">
-        <button id="save-log-button">Save</button>
+        <button id="save-log-button">Save Block</button>
         <button id="cancel-log-button">Cancel</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="confirmation-modal" class="modal">
-    <div class="modal-content">
-      <p>Are you sure you want to clear the log?</p>
-      <div class="yes-no-button-row">
-        <button id="yes-button">Yes</button>
-        <button id="no-button">No</button>
       </div>
     </div>
   </div>

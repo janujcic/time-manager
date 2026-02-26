@@ -200,6 +200,32 @@ table tr:hover {
   background-color: #eaeaea;
 }
 
+.block-actions {
+  white-space: nowrap;
+}
+
+.edit-block-button,
+.remove-block-button {
+  margin: 0 4px 0 0;
+  padding: 6px 8px;
+}
+
+.edit-block-button {
+  background-color: #2f71d3;
+}
+
+.edit-block-button:hover {
+  background-color: #0254ce;
+}
+
+.remove-block-button {
+  background-color: #f44336;
+}
+
+.remove-block-button:hover {
+  background-color: #d32f2f;
+}
+
 .dashboard-page {
   min-width: 920px;
   background: linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);

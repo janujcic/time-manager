@@ -44,6 +44,70 @@ async function appendTimeBlock(block) {
   await storageSet({ [TIME_BLOCKS_KEY]: existingBlocks });
 }
 
+async function updateTimeBlock(blockId, taskData) {
+  const task = (taskData.taskName || "").trim();
+  const startMs = Number(taskData.startTimeMs);
+  const endMs = Number(taskData.endTimeMs);
+
+  if (!blockId) {
+    return { status: "error", message: "Block id is required." };
+  }
+  if (!task) {
+    return { status: "error", message: "Task name is required." };
+  }
+  if (!Number.isFinite(startMs)) {
+    return { status: "error", message: "Start time is required." };
+  }
+  if (!Number.isFinite(endMs)) {
+    return { status: "error", message: "End time is required." };
+  }
+  if (endMs <= startMs) {
+    return { status: "error", message: "End time must be after start time." };
+  }
+
+  const blocks = await getTimeBlocks();
+  const blockIndex = blocks.findIndex((block) => block.id === blockId);
+  if (blockIndex === -1) {
+    return { status: "error", message: "Time block not found." };
+  }
+
+  const existing = blocks[blockIndex];
+  blocks[blockIndex] = {
+    ...existing,
+    task,
+    startMs,
+    endMs,
+    durationMs: endMs - startMs,
+  };
+  await storageSet({ [TIME_BLOCKS_KEY]: blocks });
+
+  if (!timerData.isRunning && timerData.savedTaskName) {
+    await refreshElapsedTimeForTask(timerData.savedTaskName);
+  }
+
+  return { status: "success" };
+}
+
+async function deleteTimeBlock(blockId) {
+  if (!blockId) {
+    return { status: "error", message: "Block id is required." };
+  }
+
+  const blocks = await getTimeBlocks();
+  const filteredBlocks = blocks.filter((block) => block.id !== blockId);
+  if (filteredBlocks.length === blocks.length) {
+    return { status: "error", message: "Time block not found." };
+  }
+
+  await storageSet({ [TIME_BLOCKS_KEY]: filteredBlocks });
+
+  if (!timerData.isRunning && timerData.savedTaskName) {
+    await refreshElapsedTimeForTask(timerData.savedTaskName);
+  }
+
+  return { status: "success" };
+}
+
 function createTimeBlock(task, startMs, endMs, source) {
   return {
     id: generateBlockId(),
@@ -373,6 +437,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse(response);
     } else if (request.action === "saveManualSession") {
       const response = await saveManualSession(request.taskData);
+      sendResponse(response);
+    } else if (request.action === "updateTimeBlock") {
+      const response = await updateTimeBlock(request.blockId, request.taskData);
+      sendResponse(response);
+    } else if (request.action === "deleteTimeBlock") {
+      const response = await deleteTimeBlock(request.blockId);
       sendResponse(response);
     } else if (request.action === "getSessions" || request.action === "getAggregatedSessions") {
       const sessions = await getMergedAggregatedSessions();
