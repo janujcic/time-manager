@@ -2,6 +2,18 @@ let startTime;
 let elapsedTime = 0;
 let taskName;
 let isLogVisible = false;
+const taskNameInput = document.getElementById("task_name");
+const taskNameError = document.getElementById("task-name-error");
+
+function showTaskNameError(message) {
+  taskNameError.textContent = message;
+  taskNameInput.classList.add("input-error");
+}
+
+function clearTaskNameError() {
+  taskNameError.textContent = "";
+  taskNameInput.classList.remove("input-error");
+}
 
 document.addEventListener("DOMContentLoaded", function () {
   chrome.runtime.sendMessage({ action: "checkStatus" }, (response) => {
@@ -18,20 +30,12 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 document.getElementById("start-button").addEventListener("click", function () {
-  taskName = document.getElementById("task_name").value.trim();
+  taskName = taskNameInput.value.trim();
   if (!taskName) {
-    alert("Please enter a task name before starting the timer.");
+    showTaskNameError("Please enter a task name before starting the timer.");
     return;
   }
-
-  // Send a message to start the timer in the background
-  chrome.runtime.sendMessage({ action: "start", taskName }, (response) => {
-    console.log(response);
-    if (response.status === "started") {
-      document.querySelector(".enter-start-task").style.display = "none";
-      document.querySelector(".running-task").style.display = "block";
-    }
-  });
+  clearTaskNameError();
 
   // Send a message to start the timer in the background
   chrome.runtime.sendMessage({ action: "start", taskName }, (response) => {
@@ -41,6 +45,12 @@ document.getElementById("start-button").addEventListener("click", function () {
       window.close(); // Close the popup
     }
   });
+});
+
+taskNameInput.addEventListener("input", () => {
+  if (taskNameInput.value.trim()) {
+    clearTaskNameError();
+  }
 });
 
 function openTimerWindow() {

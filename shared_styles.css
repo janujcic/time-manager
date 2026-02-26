@@ -81,6 +81,17 @@ label {
   margin-right: 5px;
 }
 
+.field-error {
+  min-height: 1.1em;
+  margin: 6px 0 0;
+  color: #c62828;
+  font-size: 12px;
+}
+
+.input-error {
+  border: 1px solid #c62828;
+}
+
 .modal {
   display: none; /* Hidden by default */
   position: fixed;
