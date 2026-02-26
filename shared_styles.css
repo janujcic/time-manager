@@ -88,6 +88,13 @@ label {
   font-size: 12px;
 }
 
+.field-success {
+  min-height: 1.1em;
+  margin: 6px 0 0;
+  color: #2e7d32;
+  font-size: 12px;
+}
+
 .input-error {
   border: 1px solid #c62828;
 }

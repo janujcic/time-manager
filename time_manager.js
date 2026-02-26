@@ -1,7 +1,16 @@
 const confirmationModal = document.getElementById("confirmation-modal");
 const addLogModal = document.getElementById("add-log-modal");
+const manualLogError = document.getElementById("manual-log-error");
+const manualLogSuccess = document.getElementById("manual-log-success");
+const taskNameInput = document.getElementById("task-name");
+const taskDurationHoursInput = document.getElementById("task-duration-hours");
+const taskDurationMinutesInput = document.getElementById("task-duration-minutes");
+const taskDateInput = document.getElementById("task-timedate");
+
+let durationOptionsInitialized = false;
 
 document.addEventListener("DOMContentLoaded", function () {
+  initializeDurationOptions();
   rebuildTable();
 });
 
@@ -11,6 +20,7 @@ function clearTable() {
 }
 
 function rebuildTable() {
+  clearTable();
   getSessionsFromBackground((sessions) => {
     const logDisplay = document.getElementById("log-display");
     const logTableBody = document.querySelector("#task-log-table tbody");
@@ -18,29 +28,30 @@ function rebuildTable() {
     sessions.sort((a, b) => b.duration - a.duration);
     if (sessions.length === 0) {
       logDisplay.innerText = "No recorded sessions yet.";
-    } else {
-      sessions.forEach((session, index) => {
-        const row = document.createElement("tr");
-        const taskNumberCell = document.createElement("td");
-
-        taskNumberCell.innerText = index + 1;
-        row.appendChild(taskNumberCell);
-
-        const taskNameCell = document.createElement("td");
-        taskNameCell.innerText = session.task;
-        row.appendChild(taskNameCell);
-
-        const durationCell = document.createElement("td");
-        durationCell.innerText = transformMilisecondsToTime(session.duration);
-        row.appendChild(durationCell);
-
-        const lastSavedCell = document.createElement("td");
-        lastSavedCell.innerText = session.lastSaved;
-        row.appendChild(lastSavedCell);
-
-        logTableBody.appendChild(row);
-      });
+      return;
     }
+
+    logDisplay.innerText = "";
+    sessions.forEach((session, index) => {
+      const row = document.createElement("tr");
+      const taskNumberCell = document.createElement("td");
+      taskNumberCell.innerText = index + 1;
+      row.appendChild(taskNumberCell);
+
+      const taskNameCell = document.createElement("td");
+      taskNameCell.innerText = session.task;
+      row.appendChild(taskNameCell);
+
+      const durationCell = document.createElement("td");
+      durationCell.innerText = transformMilisecondsToTime(session.duration);
+      row.appendChild(durationCell);
+
+      const lastSavedCell = document.createElement("td");
+      lastSavedCell.innerText = session.lastSaved || "-";
+      row.appendChild(lastSavedCell);
+
+      logTableBody.appendChild(row);
+    });
   });
 }
 
@@ -61,18 +72,46 @@ function generateOptions(selectElement, start, end) {
   }
 }
 
-function transformDatetime(isoDatetime) {
-  const date = new Date(isoDatetime);
+function initializeDurationOptions() {
+  if (durationOptionsInitialized) {
+    return;
+  }
 
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0"); // Months are 0-indexed
-  const year = date.getFullYear();
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  const seconds = "00"; // Adding seconds as "00" since not provided in the input
+  generateOptions(taskDurationHoursInput, 0, 12);
+  generateOptions(taskDurationMinutesInput, 0, 59);
+  taskDurationHoursInput.value = 0;
+  taskDurationMinutesInput.value = 0;
+  durationOptionsInitialized = true;
+}
 
-  // Combine into the desired format
-  return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+function setManualError(message) {
+  manualLogError.textContent = message;
+  manualLogSuccess.textContent = "";
+}
+
+function setManualSuccess(message) {
+  manualLogSuccess.textContent = message;
+  manualLogError.textContent = "";
+}
+
+function clearManualMessages() {
+  manualLogError.textContent = "";
+  manualLogSuccess.textContent = "";
+}
+
+function clearManualInputBorders() {
+  taskNameInput.classList.remove("input-error");
+  taskDurationHoursInput.classList.remove("input-error");
+  taskDurationMinutesInput.classList.remove("input-error");
+  taskDateInput.classList.remove("input-error");
+}
+
+function resetManualForm() {
+  taskNameInput.value = "";
+  taskDurationHoursInput.value = 0;
+  taskDurationMinutesInput.value = 0;
+  taskDateInput.value = "";
+  clearManualInputBorders();
 }
 
 document
@@ -83,87 +122,86 @@ document
 
 document.getElementById("yes-button").addEventListener("click", () => {
   clearSessionsInBackground();
-  document.getElementById("log-display").innerText = "Log cleared."; // Update display
-  confirmationModal.style.display = "none"; // Hide modal
-  const logTableBody = document.querySelector("#task-log-table tbody");
-  logTableBody.innerHTML = ""; // Remove all rows from the table
+  document.getElementById("log-display").innerText = "Log cleared.";
+  confirmationModal.style.display = "none";
+  clearTable();
 });
 
 document.getElementById("no-button").addEventListener("click", () => {
-  confirmationModal.style.display = "none"; // Just hide modal
+  confirmationModal.style.display = "none";
 });
 
 document
   .getElementById("add-log-button")
   .addEventListener("click", function () {
+    clearManualMessages();
+    clearManualInputBorders();
+    initializeDurationOptions();
     addLogModal.style.display = "block";
-    const hoursSelect = document.getElementById("task-duration-hours");
-    generateOptions(hoursSelect, 0, 12);
-
-    const minutesSelect = document.getElementById("task-duration-minutes");
-    generateOptions(minutesSelect, 0, 59);
   });
 
 document.getElementById("save-log-button").addEventListener("click", () => {
-  const taskNameInput = document.getElementById("task-name");
-  const taskDurationHoursInput = document.getElementById("task-duration-hours");
-  const taskDurationMinutesInput = document.getElementById(
-    "task-duration-minutes"
-  );
-  const taskDateInput = document.getElementById("task-timedate");
+  clearManualMessages();
+  clearManualInputBorders();
 
   const taskName = taskNameInput.value.trim();
-  const taskDurationHours = taskDurationHoursInput.value;
-  const taskDurationMinutes = taskDurationMinutesInput.value;
-  let taskDate = taskDateInput.value;
+  const taskDurationHours = Number(taskDurationHoursInput.value);
+  const taskDurationMinutes = Number(taskDurationMinutesInput.value);
+  const taskDateValue = taskDateInput.value;
+  const taskStartMs = Date.parse(taskDateValue);
 
-  if (taskName == "" || (taskDurationHours == 0 && taskDurationMinutes == 0)) {
-    alert("Task name and task duration fields must be filled in!");
+  if (!taskName) {
+    taskNameInput.classList.add("input-error");
+    setManualError("Task name is required.");
     return;
   }
 
-  if (taskDate != "") {
-    taskDate = transformDatetime(taskDate);
+  if (taskDurationHours === 0 && taskDurationMinutes === 0) {
+    taskDurationHoursInput.classList.add("input-error");
+    taskDurationMinutesInput.classList.add("input-error");
+    setManualError("Please enter a duration greater than zero.");
+    return;
   }
 
-  // convert duration to miliseconds
-  let totalDuration =
-    taskDurationHours * 60 * 60 * 1000 + taskDurationMinutes * 60 * 1000;
+  if (!taskDateValue || Number.isNaN(taskStartMs)) {
+    taskDateInput.classList.add("input-error");
+    setManualError("Start time is required for manual logs.");
+    return;
+  }
 
+  const totalDuration =
+    taskDurationHours * 60 * 60 * 1000 + taskDurationMinutes * 60 * 1000;
   const taskData = {
-    taskName: taskName,
+    taskName,
     taskDuration: totalDuration,
-    startTime: taskDate,
+    startTimeMs: taskStartMs,
   };
 
-  chrome.runtime.sendMessage(
-    { action: "saveManualSession", taskData },
-    (response) => {
-      if (response.status === "success") {
-        console.log("Manual session successfully added.");
-      }
+  chrome.runtime.sendMessage({ action: "saveManualSession", taskData }, (response) => {
+    if (!response || response.status !== "success") {
+      setManualError(response?.message || "Unable to save manual session.");
+      return;
     }
-  );
 
-  alert("Task saved successfully!");
-
-  taskNameInput.value = "";
-  taskDurationHoursInput.value = 0;
-  taskDurationMinutesInput.value = 0;
-  taskDateInput.value = "";
+    resetManualForm();
+    setManualSuccess("Task saved successfully.");
+    rebuildTable();
+  });
 });
 
 document.getElementById("cancel-log-button").addEventListener("click", () => {
-  addLogModal.style.display = "none"; // Just hide modal
-  clearTable();
+  addLogModal.style.display = "none";
+  clearManualMessages();
+  resetManualForm();
   rebuildTable();
 });
 
 function getSessionsFromBackground(callback) {
-  chrome.runtime.sendMessage({ action: "getSessions" }, (response) => {
-    if (response.status === "success") {
-      const sessions = response.data;
-      callback(sessions);
+  chrome.runtime.sendMessage({ action: "getAggregatedSessions" }, (response) => {
+    if (response && response.status === "success") {
+      callback(response.data);
+    } else {
+      callback([]);
     }
   });
 }

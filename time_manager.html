@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <title>Time Manager</title>
-    <link rel="stylesheet" href="shared_styles.css" />
-  </head>
+<head>
+  <title>Time Manager</title>
+  <link rel="stylesheet" href="shared_styles.css" />
+</head>
+<body>
     <h2>Task Log</h2>
     <div id="log-display"></div>
     <table id="task-log-table">
@@ -19,7 +20,6 @@
         <!-- Entries will be added here dynamically -->
       </tbody>
     </table>
-  </div>
   <div class="button-row">
     <button id="add-log-button">Add Log</button>
     <button id="clear-log-button">Clear Log</button>
@@ -28,6 +28,8 @@
   <div id="add-log-modal" class="modal">
   <div class="modal-content">
     <h2>Enter log details:</h2>
+    <p id="manual-log-error" class="field-error" role="alert" aria-live="polite"></p>
+    <p id="manual-log-success" class="field-success" aria-live="polite"></p>
     <div class="task-log">
       <div class="task-name">
         <input type="text" id="task-name" placeholder="Task name">
@@ -60,4 +62,5 @@
     </div>
   </div>
   <script src="time_manager.js"></script>
+</body>
 </html>
