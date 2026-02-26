@@ -153,8 +153,8 @@ document
   });
 
 function openTimeManagerWindow() {
-  const width = 500;
-  const height = 400;
+  const width = 980;
+  const height = 760;
   chrome.windows.create({
     url: "time_manager.html",
     type: "popup",

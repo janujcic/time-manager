@@ -1,55 +1,142 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Time Manager</title>
+  <title>Time Manager Dashboard</title>
   <link rel="stylesheet" href="shared_styles.css" />
 </head>
-<body>
-    <h2>Task Log</h2>
-    <div id="log-display"></div>
-    <table id="task-log-table">
-      <thead>
-        <tr>
-          <th>Task nr.</th>
-          <th>Task Name</th>
-          <th>Duration</th>
-          <th>Last saved</th>
-        </tr>
-      </thead>
-      <tbody>
-        <!-- Entries will be added here dynamically -->
-      </tbody>
-    </table>
+<body class="dashboard-page">
+  <div class="dashboard-header">
+    <h2>Task Dashboard</h2>
+    <p id="log-display" class="dashboard-status"></p>
+  </div>
+
+  <div class="dashboard-panel">
+    <div class="dashboard-controls">
+      <div class="control-group">
+        <label for="range-preset">Range:</label>
+        <select id="range-preset">
+          <option value="today">Today</option>
+          <option value="this-week" selected>This Week</option>
+          <option value="this-month">This Month</option>
+          <option value="all">All Time</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+      <div id="custom-range-controls" class="control-group" style="display: none">
+        <label for="custom-start-date">From:</label>
+        <input type="date" id="custom-start-date" />
+        <label for="custom-end-date">To:</label>
+        <input type="date" id="custom-end-date" />
+        <button id="apply-custom-range-button">Apply</button>
+      </div>
+      <div class="control-group">
+        <label for="period-type">Group By:</label>
+        <select id="period-type">
+          <option value="day" selected>Day</option>
+          <option value="week">Week</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <p class="kpi-label">Focused Time</p>
+        <p id="kpi-total-time" class="kpi-value">0h 0m 0s</p>
+      </div>
+      <div class="kpi-card">
+        <p class="kpi-label">Tasks</p>
+        <p id="kpi-task-count" class="kpi-value">0</p>
+      </div>
+      <div class="kpi-card">
+        <p class="kpi-label">Time Blocks</p>
+        <p id="kpi-block-count" class="kpi-value">0</p>
+      </div>
+      <div class="kpi-card">
+        <p class="kpi-label">Avg Block</p>
+        <p id="kpi-avg-block" class="kpi-value">0h 0m 0s</p>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <section class="dashboard-section">
+        <h3>Task Totals</h3>
+        <table id="task-log-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Task Name</th>
+              <th>Total Duration</th>
+              <th>Blocks</th>
+              <th>Last Saved</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section class="dashboard-section">
+        <h3>Period Summary</h3>
+        <table id="period-summary-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th id="period-summary-label">Day</th>
+              <th>Total Duration</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </div>
+
+    <section class="dashboard-section">
+      <h3>Time Blocks</h3>
+      <table id="block-log-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Task Name</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Duration</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </div>
+
   <div class="button-row">
     <button id="add-log-button">Add Log</button>
     <button id="clear-log-button">Clear Log</button>
   </div>
-  
+
   <div id="add-log-modal" class="modal">
-  <div class="modal-content">
-    <h2>Enter log details:</h2>
-    <p id="manual-log-error" class="field-error" role="alert" aria-live="polite"></p>
-    <p id="manual-log-success" class="field-success" aria-live="polite"></p>
-    <div class="task-log">
-      <div class="task-name">
-        <input type="text" id="task-name" placeholder="Task name">
+    <div class="modal-content">
+      <h2>Enter log details:</h2>
+      <p id="manual-log-error" class="field-error" role="alert" aria-live="polite"></p>
+      <p id="manual-log-success" class="field-success" aria-live="polite"></p>
+      <div class="task-log">
+        <div class="task-name">
+          <input type="text" id="task-name" placeholder="Task name" />
+        </div>
+        <div class="task-duration">
+          <label for="task-duration-hours">Hours:</label>
+          <select id="task-duration-hours"></select>
+          <label for="task-duration-minutes">Minutes:</label>
+          <select id="task-duration-minutes"></select>
+        </div>
+        <div class="task-time">
+          <label for="task-timedate">Start Time:</label>
+          <input type="datetime-local" id="task-timedate" />
+        </div>
       </div>
-      <div class="task-duration">
-        <label for="task-duration-hours">Hours:</label>
-        <select id="task-duration-hours"></select>
-        <label for="task-duration-minutes">Minutes:</label>
-        <select id="task-duration-minutes"></select>
-      </div>
-      <div class="task-time">
-        <label for="task-timedate">Start Time:</label>
-        <input type="datetime-local" id="task-timedate">
+      <div class="button-row">
+        <button id="save-log-button">Save</button>
+        <button id="cancel-log-button">Cancel</button>
       </div>
     </div>
-    <div class="button-row">
-      <button id="save-log-button">Save</button>
-      <button id="cancel-log-button">Cancel</button>
-    </div>
-  </div>
   </div>
 
   <div id="confirmation-modal" class="modal">
@@ -58,7 +145,7 @@
       <div class="yes-no-button-row">
         <button id="yes-button">Yes</button>
         <button id="no-button">No</button>
-      </div> 
+      </div>
     </div>
   </div>
   <script src="time_manager.js"></script>
