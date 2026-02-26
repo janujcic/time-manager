@@ -5,6 +5,9 @@ const manualLogError = document.getElementById("manual-log-error");
 const taskNameInput = document.getElementById("task-name");
 const taskStartDatetimeInput = document.getElementById("task-start-datetime");
 const taskEndDatetimeInput = document.getElementById("task-end-datetime");
+const snTimecardWrap = document.getElementById("sn-timecard-wrap");
+const snTimecardSearchInput = document.getElementById("sn-timecard-search");
+const snTimecardSelect = document.getElementById("sn-timecard-select");
 const blockLogTableBody = document.querySelector("#block-log-table tbody");
 
 const rangePresetSelect = document.getElementById("range-preset");
@@ -20,14 +23,25 @@ const kpiTotalTime = document.getElementById("kpi-total-time");
 const kpiTaskCount = document.getElementById("kpi-task-count");
 const kpiBlockCount = document.getElementById("kpi-block-count");
 const kpiAvgBlock = document.getElementById("kpi-avg-block");
+const snEnabledInput = document.getElementById("sn-enabled");
+const snInstanceUrlInput = document.getElementById("sn-instance-url");
+const snSaveConfigButton = document.getElementById("sn-save-config-button");
+const snCheckSessionButton = document.getElementById("sn-check-session-button");
+const snRefreshTimecardsButton = document.getElementById("sn-refresh-timecards-button");
+const snSyncButton = document.getElementById("sn-sync-button");
+const snStatus = document.getElementById("sn-status");
 
 let allBlocks = [];
 let filteredBlocks = [];
 let legacySessions = [];
 let editingBlockId = null;
+let snConfig = { enabled: false, instanceUrl: "" };
+let snTimecardsCache = { fetchedAtMs: 0, items: [] };
 
 document.addEventListener("DOMContentLoaded", () => {
   bindDashboardEvents();
+  loadServiceNowConfig();
+  refreshServiceNowTimecardsFromCache();
   rebuildDashboard();
 });
 
@@ -47,6 +61,132 @@ function bindDashboardEvents() {
   });
 
   blockLogTableBody.addEventListener("click", onBlockActionClick);
+  snSaveConfigButton.addEventListener("click", saveServiceNowConfig);
+  snCheckSessionButton.addEventListener("click", checkServiceNowSession);
+  snRefreshTimecardsButton.addEventListener("click", fetchServiceNowTimecards);
+  snSyncButton.addEventListener("click", syncServiceNowTimecards);
+  snTimecardSearchInput.addEventListener("input", renderTimecardOptions);
+}
+
+function setSnStatus(message) {
+  snStatus.textContent = message || "";
+}
+
+function updateServiceNowUiVisibility() {
+  const visible = Boolean(snConfig.enabled);
+  snTimecardWrap.style.display = visible ? "flex" : "none";
+}
+
+function renderTimecardOptions(selectedSysId = "") {
+  const filterValue = (snTimecardSearchInput.value || "").trim().toLowerCase();
+  const items = Array.isArray(snTimecardsCache.items) ? snTimecardsCache.items : [];
+
+  const filtered = items.filter((item) => {
+    if (!filterValue) {
+      return true;
+    }
+    const haystack = `${item.number || ""} ${item.short_description || ""} ${item.stateDisplay || ""}`.toLowerCase();
+    return haystack.includes(filterValue);
+  });
+
+  snTimecardSelect.innerHTML = "";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = filtered.length === 0 ? "No matching timecards" : "Select a timecard";
+  snTimecardSelect.appendChild(placeholder);
+
+  filtered.forEach((item) => {
+    const option = document.createElement("option");
+    option.value = item.sys_id;
+    option.textContent = `${item.number || item.sys_id} - ${item.short_description || ""}`;
+    snTimecardSelect.appendChild(option);
+  });
+
+  if (selectedSysId) {
+    snTimecardSelect.value = selectedSysId;
+  }
+}
+
+function refreshServiceNowTimecardsFromCache() {
+  chrome.runtime.sendMessage({ action: "servicenow/getCachedTimecards" }, (response) => {
+    if (response?.status === "success") {
+      snTimecardsCache = response.data || { fetchedAtMs: 0, items: [] };
+      renderTimecardOptions();
+    }
+  });
+}
+
+function loadServiceNowConfig() {
+  chrome.runtime.sendMessage({ action: "servicenow/getConfig" }, (response) => {
+    if (response?.status === "success") {
+      snConfig = response.data || { enabled: false, instanceUrl: "" };
+      snEnabledInput.checked = Boolean(snConfig.enabled);
+      snInstanceUrlInput.value = snConfig.instanceUrl || "";
+      updateServiceNowUiVisibility();
+    }
+  });
+}
+
+function saveServiceNowConfig() {
+  const config = {
+    enabled: snEnabledInput.checked,
+    instanceUrl: snInstanceUrlInput.value.trim(),
+  };
+
+  chrome.runtime.sendMessage({ action: "servicenow/saveConfig", config }, (response) => {
+    if (!response || response.status !== "success") {
+      setSnStatus(response?.message || "Failed to save ServiceNow config.");
+      return;
+    }
+
+    snConfig = response.data;
+    updateServiceNowUiVisibility();
+    setSnStatus("ServiceNow configuration saved.");
+  });
+}
+
+function checkServiceNowSession() {
+  chrome.runtime.sendMessage({ action: "servicenow/ensurePermission" }, (permResponse) => {
+    if (!permResponse || permResponse.status !== "success") {
+      setSnStatus(permResponse?.message || "Permission for ServiceNow tab access is required.");
+      return;
+    }
+    chrome.runtime.sendMessage({ action: "servicenow/checkSession" }, (response) => {
+      if (!response || response.status !== "success") {
+        setSnStatus(response?.message || "ServiceNow session check failed.");
+        return;
+      }
+      setSnStatus(
+        `ServiceNow session active for user ${response.data.userName || response.data.userId}.`
+      );
+    });
+  });
+}
+
+function fetchServiceNowTimecards() {
+  chrome.runtime.sendMessage({ action: "servicenow/fetchTimecards" }, (response) => {
+    if (!response || response.status !== "success") {
+      setSnStatus(response?.message || "Failed to fetch ServiceNow timecards.");
+      return;
+    }
+    snTimecardsCache = response.data || { fetchedAtMs: 0, items: [] };
+    renderTimecardOptions();
+    setSnStatus(`Fetched ${snTimecardsCache.items?.length || 0} open timecards.`);
+  });
+}
+
+function syncServiceNowTimecards() {
+  chrome.runtime.sendMessage({ action: "servicenow/sync" }, (response) => {
+    if (!response || response.status === "error") {
+      setSnStatus(response?.message || "ServiceNow sync failed.");
+      rebuildDashboard();
+      return;
+    }
+
+    const results = response.data?.results || [];
+    setSnStatus(`ServiceNow sync complete. Updated ${results.length} timecards.`);
+    rebuildDashboard();
+  });
 }
 
 function transformMilisecondsToTime(miliseconds) {
@@ -306,6 +446,9 @@ function renderBlockTable() {
   }
 
   rows.forEach((block, index) => {
+    const syncLabel = block.snTimecardSysId
+      ? `${block.snSyncState || "pending"}`
+      : "not linked";
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>${index + 1}</td>
@@ -313,7 +456,7 @@ function renderBlockTable() {
       <td>${formatDateTime(block.startMs)}</td>
       <td>${formatDateTime(block.endMs)}</td>
       <td>${transformMilisecondsToTime(block.durationMs)}</td>
-      <td>${block.source}</td>
+      <td>${block.source}<br /><small>${syncLabel}</small></td>
       <td class="block-actions">
         <button class="edit-block-button" data-action="edit" data-block-id="${block.id}">Edit</button>
         <button class="remove-block-button" data-action="remove" data-block-id="${block.id}">X</button>
@@ -364,12 +507,15 @@ function clearManualInputBorders() {
   taskNameInput.classList.remove("input-error");
   taskStartDatetimeInput.classList.remove("input-error");
   taskEndDatetimeInput.classList.remove("input-error");
+  snTimecardSelect.classList.remove("input-error");
 }
 
 function resetManualForm() {
   taskNameInput.value = "";
   taskStartDatetimeInput.value = "";
   taskEndDatetimeInput.value = "";
+  snTimecardSearchInput.value = "";
+  renderTimecardOptions();
   editingBlockId = null;
   addLogModalTitle.textContent = "Add time block";
   saveLogButton.textContent = "Save Block";
@@ -408,6 +554,8 @@ function openEditBlockModal(blockId) {
   taskNameInput.value = block.task;
   taskStartDatetimeInput.value = toDatetimeLocalValue(block.startMs);
   taskEndDatetimeInput.value = toDatetimeLocalValue(block.endMs);
+  snTimecardSearchInput.value = "";
+  renderTimecardOptions(block.snTimecardSysId || "");
   clearManualMessages();
   clearManualInputBorders();
   addLogModal.style.display = "block";
@@ -427,6 +575,7 @@ function removeBlock(blockId) {
 document.getElementById("add-log-button").addEventListener("click", () => {
   resetManualForm();
   clearManualMessages();
+  updateServiceNowUiVisibility();
   addLogModal.style.display = "block";
 });
 
@@ -461,6 +610,16 @@ saveLogButton.addEventListener("click", () => {
     setManualError("End time must be after start time.");
     return;
   }
+
+  const selectedTimecardSysId = snTimecardSelect.value;
+  const selectedTimecardLabel =
+    snTimecardSelect.selectedOptions?.[0]?.textContent || "";
+  if (snConfig.enabled && !selectedTimecardSysId) {
+    snTimecardSelect.classList.add("input-error");
+    setManualError("ServiceNow timecard selection is required when integration is enabled.");
+    return;
+  }
+
   const totalDuration = taskEndMs - taskStartMs;
 
   const payload = {
@@ -468,6 +627,8 @@ saveLogButton.addEventListener("click", () => {
     taskDuration: totalDuration,
     startTimeMs: taskStartMs,
     endTimeMs: taskEndMs,
+    snTimecardSysId: selectedTimecardSysId,
+    snTimecardLabel: selectedTimecardLabel,
   };
 
   const action = editingBlockId ? "updateTimeBlock" : "saveManualSession";

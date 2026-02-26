@@ -315,3 +315,54 @@ table tr:hover {
 .dashboard-section h3 {
   margin: 0 0 8px;
 }
+
+.servicenow-panel {
+  border: 1px solid #dbe8f9;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fbff;
+}
+
+.servicenow-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.servicenow-controls input[type="url"] {
+  min-width: 280px;
+}
+
+#sn-save-config-button,
+#sn-check-session-button,
+#sn-refresh-timecards-button,
+#sn-sync-button {
+  background-color: #2f71d3;
+}
+
+#sn-save-config-button:hover,
+#sn-check-session-button:hover,
+#sn-refresh-timecards-button:hover,
+#sn-sync-button:hover {
+  background-color: #0254ce;
+}
+
+.checkbox-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-log > .servicenow-select-wrap {
+  display: none;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+}
+
+#sn-timecard-search,
+#sn-timecard-select {
+  width: 100%;
+  min-width: 280px;
+  padding: 6px;
+}

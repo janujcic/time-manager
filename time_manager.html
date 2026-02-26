@@ -38,6 +38,23 @@
       </div>
     </div>
 
+    <section class="dashboard-section servicenow-panel">
+      <h3>ServiceNow</h3>
+      <div class="servicenow-controls">
+        <label class="checkbox-inline" for="sn-enabled">
+          <input type="checkbox" id="sn-enabled" />
+          Enable ServiceNow integration
+        </label>
+        <label for="sn-instance-url">Instance URL:</label>
+        <input type="url" id="sn-instance-url" placeholder="https://your-instance.service-now.com" />
+        <button id="sn-save-config-button">Save</button>
+        <button id="sn-check-session-button">Check Session</button>
+        <button id="sn-refresh-timecards-button">Refresh Timecards</button>
+        <button id="sn-sync-button">Sync to ServiceNow</button>
+      </div>
+      <p id="sn-status" class="dashboard-status"></p>
+    </section>
+
     <div class="kpi-grid">
       <div class="kpi-card">
         <p class="kpi-label">Focused Time</p>
@@ -119,6 +136,11 @@
       <div class="task-log">
         <div class="task-name">
           <input type="text" id="task-name" placeholder="Task name" />
+        </div>
+        <div class="task-time servicenow-select-wrap" id="sn-timecard-wrap">
+          <label for="sn-timecard-search">ServiceNow Timecard:</label>
+          <input type="text" id="sn-timecard-search" placeholder="Type to filter timecards" />
+          <select id="sn-timecard-select"></select>
         </div>
         <div class="task-time">
           <label for="task-start-datetime">Start Time:</label>
