@@ -20,5 +20,11 @@
     "16": "icons/time_manager16.png",
     "48": "icons/time_manager48.png",
     "128": "icons/time_manager128.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "time-manager@example.org",
+      "strict_min_version": "109.0"
+    }
   }
 }
