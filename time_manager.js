@@ -33,6 +33,7 @@ const snConnectButton = document.getElementById("sn-connect-button");
 const snRefreshLookupsButton = document.getElementById("sn-refresh-lookups-button");
 const snSyncButton = document.getElementById("sn-sync-button");
 const snStatus = document.getElementById("sn-status");
+const snSyncReport = document.getElementById("sn-sync-report");
 const snConnectionBadge = document.getElementById("sn-connection-badge");
 
 let allBlocks = [];
@@ -77,6 +78,10 @@ function bindDashboardEvents() {
 
 function setSnStatus(message) {
   snStatus.textContent = message || "";
+}
+
+function setSnSyncReport(message) {
+  snSyncReport.textContent = message || "";
 }
 
 function updateServiceNowUiVisibility() {
@@ -548,9 +553,12 @@ function syncVisibleRangeToServiceNow() {
   const blockIds = filteredBlocks.map((block) => block.id).filter(Boolean);
   if (blockIds.length === 0) {
     setSnStatus("No time blocks in the selected range to sync.");
+    setSnSyncReport("");
     return;
   }
 
+  setSnStatus(`Syncing ${blockIds.length} block(s) to ServiceNow...`);
+  setSnSyncReport("");
   chrome.runtime.sendMessage(
     {
       action: "servicenow/syncVisibleBlocks",
@@ -562,9 +570,53 @@ function syncVisibleRangeToServiceNow() {
     (response) => {
       if (!response || response.status !== "success") {
         setSnStatus(response?.message || "Sync is not available yet.");
+        setSnSyncReport("");
         return;
       }
-      setSnStatus("Sync completed.");
+
+      const report = response.data || {};
+      const synced = Number(report.synced) || 0;
+      const created = Number(report.created) || 0;
+      const updated = Number(report.updated) || 0;
+      const skippedSubmitted = Number(report.skippedSubmitted) || 0;
+      const skippedInvalid = Number(report.skippedInvalid) || 0;
+      const failed = Number(report.failed) || 0;
+      const groupCount = Number(report.groupCount) || 0;
+
+      setSnStatus(
+        `Sync complete. ${synced}/${groupCount} groups applied (created ${created}, updated ${updated}).`
+      );
+
+      const detailFragments = [];
+      if (skippedSubmitted > 0) {
+        detailFragments.push(`${skippedSubmitted} skipped (submitted)`);
+      }
+      if (skippedInvalid > 0) {
+        detailFragments.push(`${skippedInvalid} invalid local group(s)`);
+      }
+      if (failed > 0) {
+        detailFragments.push(`${failed} failed`);
+      }
+
+      const detailLines = [];
+      const detailRows = Array.isArray(report.details) ? report.details : [];
+      const problemRows = detailRows.filter((row) => {
+        const status = String(row?.status || "").toLowerCase();
+        return status === "error" || status === "skipped" || String(row?.code || "");
+      });
+      problemRows.slice(0, 3).forEach((row) => {
+        const key = row.weekStartDate || row.groupKey || "group";
+        const msg = row.message || row.code || "unknown error";
+        detailLines.push(`${key}: ${msg}`);
+      });
+
+      const invalidRows = Array.isArray(report.invalidBlocks) ? report.invalidBlocks : [];
+      invalidRows.slice(0, 3).forEach((item) => {
+        detailLines.push(`block ${item.blockId || "unknown"}: ${item.reason || "invalid"}`);
+      });
+
+      const reportText = [...detailFragments, ...detailLines].join(" | ");
+      setSnSyncReport(reportText);
     }
   );
 }
