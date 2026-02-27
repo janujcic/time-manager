@@ -5,6 +5,23 @@
   "description": "A simple time-tracking extension.",
   "permissions": ["storage", "activeTab", "tabs", "scripting"],
   "optional_host_permissions": ["https://*/*"],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.service-now.com/*",
+        "https://*.service-now.eu/*",
+        "https://*.service-now.us/*"
+      ],
+      "js": ["sn_content_bridge.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["sn_page_bridge.js"],
+      "matches": ["https://*/*"]
+    }
+  ],
   "background": {
     "service_worker": "background.js",
     "scripts": ["background.js"]

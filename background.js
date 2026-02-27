@@ -1,8 +1,7 @@
 const TIME_BLOCKS_KEY = "timeBlocks";
-const LEGACY_SESSIONS_KEY = "timeSessions";
 const SN_CONFIG_KEY = "sn_config";
-const SN_TIMECARDS_CACHE_KEY = "sn_timecards_cache";
-const SN_LAST_SYNC_REPORT_KEY = "sn_last_sync_report";
+const SN_LOOKUP_CACHE_KEY = "sn_lookup_cache";
+const DEPRECATED_STORAGE_KEYS = ["timeSessions", "sn_timecards_cache", "sn_last_sync_report"];
 
 const DEFAULT_SN_CONFIG = {
   enabled: false,
@@ -14,16 +13,29 @@ let timerData = {
   isRunning: false,
   elapsedTime: 0,
   lastSaved: "",
+  snSelectionType: "",
+  snTaskSysId: "",
+  snTaskNumber: "",
+  snTaskShortDescription: "",
+  snCategorySysId: "",
+  snCategoryValue: "",
+  snCategoryLabel: "",
+  snCodeSysId: "",
+  snCodeValue: "",
+  snCodeDescription: "",
+  snCommentText: "",
 };
 let timerInterval = null;
 let activeBlockStartMs = null;
 let elapsedBeforeActiveMs = 0;
+let lastConnectedSnTabId = null;
+let lastConnectedSnUserId = "";
 
 initializeStorage();
 
 function initializeStorage() {
   chrome.storage.local.get(
-    [TIME_BLOCKS_KEY, SN_CONFIG_KEY, SN_TIMECARDS_CACHE_KEY, SN_LAST_SYNC_REPORT_KEY],
+    [TIME_BLOCKS_KEY, SN_CONFIG_KEY, SN_LOOKUP_CACHE_KEY, ...DEPRECATED_STORAGE_KEYS],
     (result) => {
       const updatePayload = {};
       if (!Array.isArray(result[TIME_BLOCKS_KEY])) {
@@ -32,20 +44,23 @@ function initializeStorage() {
       if (!result[SN_CONFIG_KEY] || typeof result[SN_CONFIG_KEY] !== "object") {
         updatePayload[SN_CONFIG_KEY] = { ...DEFAULT_SN_CONFIG };
       }
-      if (
-        !result[SN_TIMECARDS_CACHE_KEY] ||
-        typeof result[SN_TIMECARDS_CACHE_KEY] !== "object"
-      ) {
-        updatePayload[SN_TIMECARDS_CACHE_KEY] = { fetchedAtMs: 0, items: [] };
-      }
-      if (
-        !result[SN_LAST_SYNC_REPORT_KEY] ||
-        typeof result[SN_LAST_SYNC_REPORT_KEY] !== "object"
-      ) {
-        updatePayload[SN_LAST_SYNC_REPORT_KEY] = { syncedAtMs: 0, results: [] };
+      if (!result[SN_LOOKUP_CACHE_KEY] || typeof result[SN_LOOKUP_CACHE_KEY] !== "object") {
+        updatePayload[SN_LOOKUP_CACHE_KEY] = {
+          fetchedAtMs: 0,
+          tasks: [],
+          categories: [],
+          timeCodes: [],
+        };
       }
       if (Object.keys(updatePayload).length > 0) {
         chrome.storage.local.set(updatePayload);
+      }
+
+      const keysToRemove = DEPRECATED_STORAGE_KEYS.filter((key) =>
+        Object.prototype.hasOwnProperty.call(result, key)
+      );
+      if (keysToRemove.length > 0) {
+        chrome.storage.local.remove(keysToRemove);
       }
     }
   );
@@ -81,20 +96,31 @@ function queryTabs(queryInfo) {
   });
 }
 
-function executeScriptOnTab(tabId, func, args = []) {
+function tabsSendMessage(tabId, message) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, message, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
+function executeScriptFileOnTab(tabId, files) {
   return new Promise((resolve, reject) => {
     chrome.scripting.executeScript(
       {
         target: { tabId },
-        func,
-        args,
+        files,
       },
       (injectionResults) => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
           return;
         }
-        resolve(injectionResults?.[0]?.result);
+        resolve(injectionResults || []);
       }
     );
   });
@@ -110,36 +136,130 @@ function normalizeInstanceUrl(rawUrl) {
     if (parsed.protocol !== "https:") {
       return null;
     }
+    if (
+      parsed.pathname !== "/" ||
+      parsed.search ||
+      parsed.hash ||
+      parsed.username ||
+      parsed.password
+    ) {
+      return null;
+    }
     return parsed.origin;
   } catch {
     return null;
   }
 }
 
-function withServiceNowMetadata(base, taskData) {
-  const sysId = (taskData?.snTimecardSysId || "").trim();
-  const label = (taskData?.snTimecardLabel || "").trim();
+function readString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
 
-  if (!sysId) {
+function normalizeServiceNowMetadata(taskData = {}) {
+  let snSelectionType = readString(taskData.snSelectionType);
+  const snTaskSysId = readString(taskData.snTaskSysId);
+  const snTaskNumber = readString(taskData.snTaskNumber);
+  const snTaskShortDescription = readString(taskData.snTaskShortDescription);
+  const snCategorySysId = readString(taskData.snCategorySysId);
+  const snCategoryValue = readString(taskData.snCategoryValue);
+  const snCategoryLabel = readString(taskData.snCategoryLabel);
+  const snCodeSysId = readString(taskData.snCodeSysId);
+  const snCodeValue = readString(taskData.snCodeValue);
+  const snCodeDescription = readString(taskData.snCodeDescription);
+  const snCommentText = readString(taskData.snCommentText);
+
+  if (snSelectionType !== "task" && snSelectionType !== "category") {
+    if (snTaskSysId) {
+      snSelectionType = "task";
+    } else if (snCategorySysId || snCategoryValue) {
+      snSelectionType = "category";
+    } else {
+      snSelectionType = "";
+    }
+  }
+
+  if (snSelectionType === "task") {
     return {
-      ...base,
-      snTimecardSysId: "",
-      snTimecardLabel: "",
-      snSyncState: "not_linked",
-      snLastSyncedAtMs: null,
-      snLastSyncedHours: null,
-      snLastSyncError: "",
+      snSelectionType,
+      snTaskSysId,
+      snTaskNumber,
+      snTaskShortDescription,
+      snCategorySysId: snCategorySysId || "",
+      snCategoryValue: snCategoryValue || "task_work",
+      snCategoryLabel: snCategoryLabel || "Task Work",
+      snCodeSysId,
+      snCodeValue,
+      snCodeDescription,
+      snCommentText,
+    };
+  }
+
+  if (snSelectionType === "category") {
+    return {
+      snSelectionType,
+      snTaskSysId: "",
+      snTaskNumber: "",
+      snTaskShortDescription: "",
+      snCategorySysId,
+      snCategoryValue,
+      snCategoryLabel,
+      snCodeSysId,
+      snCodeValue,
+      snCodeDescription,
+      snCommentText,
     };
   }
 
   return {
+    snSelectionType: "",
+    snTaskSysId: "",
+    snTaskNumber: "",
+    snTaskShortDescription: "",
+    snCategorySysId: "",
+    snCategoryValue: "",
+    snCategoryLabel: "",
+    snCodeSysId: "",
+    snCodeValue: "",
+    snCodeDescription: "",
+    snCommentText,
+  };
+}
+
+async function validateServiceNowMetadata(taskData = {}) {
+  const config = await getServiceNowConfig();
+  if (!config.enabled) {
+    return { status: "success" };
+  }
+
+  const metadata = normalizeServiceNowMetadata(taskData);
+  if (!metadata.snCodeSysId) {
+    return { status: "error", message: "Time code selection is required." };
+  }
+
+  if (metadata.snSelectionType === "task" && !metadata.snTaskSysId) {
+    return { status: "error", message: "Please select an assigned task suggestion." };
+  }
+
+  if (metadata.snSelectionType === "category") {
+    if (!metadata.snCategorySysId || !metadata.snCategoryValue) {
+      return { status: "error", message: "Please select a category suggestion." };
+    }
+    if (metadata.snCategoryValue === "task_work") {
+      return { status: "error", message: "task_work is reserved for task-linked entries." };
+    }
+  }
+
+  return { status: "success" };
+}
+
+function withServiceNowMetadata(base, taskData, fallbackComment = "") {
+  const metadata = normalizeServiceNowMetadata(taskData);
+  if (!metadata.snSelectionType && !metadata.snCommentText) {
+    metadata.snCommentText = readString(fallbackComment);
+  }
+  return {
     ...base,
-    snTimecardSysId: sysId,
-    snTimecardLabel: label || sysId,
-    snSyncState: "pending",
-    snLastSyncedAtMs: null,
-    snLastSyncedHours: null,
-    snLastSyncError: "",
+    ...metadata,
   };
 }
 
@@ -179,6 +299,11 @@ async function updateTimeBlock(blockId, taskData) {
     return { status: "error", message: "End time must be after start time." };
   }
 
+  const snValidation = await validateServiceNowMetadata(taskData || {});
+  if (snValidation.status !== "success") {
+    return snValidation;
+  }
+
   const blocks = await getTimeBlocks();
   const blockIndex = blocks.findIndex((block) => block.id === blockId);
   if (blockIndex === -1) {
@@ -194,15 +319,9 @@ async function updateTimeBlock(blockId, taskData) {
       endMs,
       durationMs: endMs - startMs,
     },
-    taskData
+    taskData,
+    task
   );
-
-  if (existing.snTimecardSysId && updated.snTimecardSysId === existing.snTimecardSysId) {
-    updated.snSyncState = existing.snSyncState || "pending";
-    updated.snLastSyncedAtMs = existing.snLastSyncedAtMs || null;
-    updated.snLastSyncedHours = existing.snLastSyncedHours || null;
-    updated.snLastSyncError = existing.snLastSyncError || "";
-  }
 
   blocks[blockIndex] = updated;
   await saveTimeBlocks(blocks);
@@ -245,7 +364,7 @@ function createTimeBlock(task, startMs, endMs, source, taskData = {}) {
     createdAtMs: Date.now(),
   };
 
-  return withServiceNowMetadata(base, taskData);
+  return withServiceNowMetadata(base, taskData, task);
 }
 
 function generateBlockId() {
@@ -280,19 +399,50 @@ function broadcastTimerUpdate() {
   });
 }
 
-async function startTimer(taskName) {
+async function startTimer(taskName, taskData = {}) {
   if (timerData.isRunning || timerInterval !== null) {
     return { status: "started" };
   }
 
+  const previousTaskName = timerData.savedTaskName;
   const normalizedTaskName = (taskName || timerData.savedTaskName || "").trim();
   if (!normalizedTaskName) {
     return { status: "error", message: "Task name is required." };
   }
 
-  if (timerData.savedTaskName !== normalizedTaskName) {
-    timerData.savedTaskName = normalizedTaskName;
+  const isSameTask = previousTaskName === normalizedTaskName;
+  const hasIncomingMetadata = Boolean(
+    taskData &&
+      (taskData.snSelectionType ||
+        taskData.snTaskSysId ||
+        taskData.snCategorySysId ||
+        taskData.snCodeSysId)
+  );
+  const candidateMetadata = hasIncomingMetadata
+    ? taskData
+    : isSameTask
+      ? {
+          snSelectionType: timerData.snSelectionType,
+          snTaskSysId: timerData.snTaskSysId,
+          snTaskNumber: timerData.snTaskNumber,
+          snTaskShortDescription: timerData.snTaskShortDescription,
+          snCategorySysId: timerData.snCategorySysId,
+          snCategoryValue: timerData.snCategoryValue,
+          snCategoryLabel: timerData.snCategoryLabel,
+          snCodeSysId: timerData.snCodeSysId,
+          snCodeValue: timerData.snCodeValue,
+          snCodeDescription: timerData.snCodeDescription,
+          snCommentText: timerData.snCommentText,
+        }
+      : {};
+
+  const snValidation = await validateServiceNowMetadata(candidateMetadata);
+  if (snValidation.status !== "success") {
+    return snValidation;
   }
+
+  timerData.savedTaskName = normalizedTaskName;
+  Object.assign(timerData, normalizeServiceNowMetadata(candidateMetadata));
 
   await refreshElapsedTimeForTask(timerData.savedTaskName);
 
@@ -330,7 +480,20 @@ async function stopTimer() {
     timerData.savedTaskName,
     activeBlockStartMs,
     endMs,
-    "timer"
+    "timer",
+    {
+      snSelectionType: timerData.snSelectionType,
+      snTaskSysId: timerData.snTaskSysId,
+      snTaskNumber: timerData.snTaskNumber,
+      snTaskShortDescription: timerData.snTaskShortDescription,
+      snCategorySysId: timerData.snCategorySysId,
+      snCategoryValue: timerData.snCategoryValue,
+      snCategoryLabel: timerData.snCategoryLabel,
+      snCodeSysId: timerData.snCodeSysId,
+      snCodeValue: timerData.snCodeValue,
+      snCodeDescription: timerData.snCodeDescription,
+      snCommentText: timerData.snCommentText,
+    }
   );
   await appendTimeBlock(newBlock);
 
@@ -355,6 +518,17 @@ async function finishTimer() {
     isRunning: false,
     elapsedTime: 0,
     lastSaved: "",
+    snSelectionType: "",
+    snTaskSysId: "",
+    snTaskNumber: "",
+    snTaskShortDescription: "",
+    snCategorySysId: "",
+    snCategoryValue: "",
+    snCategoryLabel: "",
+    snCodeSysId: "",
+    snCodeValue: "",
+    snCodeDescription: "",
+    snCommentText: "",
   };
   elapsedBeforeActiveMs = 0;
   activeBlockStartMs = null;
@@ -429,37 +603,9 @@ function aggregateBlocksByPeriod(blocks, periodType = "day") {
   );
 }
 
-async function getMergedAggregatedSessions() {
-  const [blocks, legacyResult] = await Promise.all([
-    getTimeBlocks(),
-    storageGet([LEGACY_SESSIONS_KEY]),
-  ]);
-
-  const aggregated = aggregateBlocksByTask(blocks);
-  const mergedByTask = new Map(
-    aggregated.map((session) => [session.task, { ...session }])
-  );
-  const legacySessions = Array.isArray(legacyResult[LEGACY_SESSIONS_KEY])
-    ? legacyResult[LEGACY_SESSIONS_KEY]
-    : [];
-
-  for (const session of legacySessions) {
-    const existing = mergedByTask.get(session.task);
-    if (existing) {
-      existing.duration += Number(session.duration) || 0;
-      if (!existing.lastSaved && session.lastSaved) {
-        existing.lastSaved = session.lastSaved;
-      }
-    } else {
-      mergedByTask.set(session.task, {
-        task: session.task,
-        duration: Number(session.duration) || 0,
-        lastSaved: session.lastSaved || "",
-      });
-    }
-  }
-
-  return Array.from(mergedByTask.values()).sort((a, b) => b.duration - a.duration);
+async function getAggregatedSessions() {
+  const blocks = await getTimeBlocks();
+  return aggregateBlocksByTask(blocks);
 }
 
 async function saveManualSession(taskData) {
@@ -490,6 +636,11 @@ async function saveManualSession(taskData) {
     return { status: "error", message: "End time must be after start time." };
   }
 
+  const snValidation = await validateServiceNowMetadata(taskData || {});
+  if (snValidation.status !== "success") {
+    return snValidation;
+  }
+
   const block = createTimeBlock(task, startMs, endMs, "manual", taskData);
   await appendTimeBlock(block);
 
@@ -500,19 +651,18 @@ async function saveManualSession(taskData) {
   return { status: "success" };
 }
 
-async function saveSession(task, newTime) {
-  const taskName = (task || "").trim();
-  const durationMs = Number(newTime);
+const SN_BRIDGE_TIMEOUT_MS = 15000;
 
-  if (!taskName || !Number.isFinite(durationMs) || durationMs <= 0) {
-    return { status: "error", message: "Invalid task or duration." };
+function createSnError(code, message, recoveryHint = "") {
+  const payload = { status: "error", code, message };
+  if (recoveryHint) {
+    payload.data = { recoveryHint };
   }
+  return payload;
+}
 
-  const endMs = Date.now();
-  const startMs = endMs - durationMs;
-  const block = createTimeBlock(taskName, startMs, endMs, "manual");
-  await appendTimeBlock(block);
-  return { status: "success" };
+function createSnRequestId() {
+  return `sn-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 async function getServiceNowConfig() {
@@ -526,14 +676,15 @@ async function getServiceNowConfig() {
 
 async function saveServiceNowConfig(configInput) {
   const enabled = Boolean(configInput?.enabled);
-  const instanceUrl = normalizeInstanceUrl(configInput?.instanceUrl || "");
+  const rawUrl = configInput?.instanceUrl || "";
+  const instanceUrl = normalizeInstanceUrl(rawUrl);
 
   if (enabled && !instanceUrl) {
-    return {
-      status: "error",
-      code: "SN_NO_CONFIG",
-      message: "A valid HTTPS ServiceNow instance URL is required.",
-    };
+    return createSnError(
+      "SN_NO_CONFIG",
+      "ServiceNow URL must be HTTPS origin only (for example, https://your-instance.service-now.com).",
+      "Remove any path, query, or hash from the URL."
+    );
   }
 
   const config = {
@@ -548,16 +699,15 @@ async function saveServiceNowConfig(configInput) {
 async function ensureServiceNowPermission(instanceUrl) {
   const normalized = normalizeInstanceUrl(instanceUrl || "");
   if (!normalized) {
-    return {
-      status: "error",
-      code: "SN_NO_CONFIG",
-      message: "A valid HTTPS ServiceNow instance URL is required.",
-    };
+    return createSnError(
+      "SN_NO_CONFIG",
+      "A valid HTTPS ServiceNow instance URL is required.",
+      "Set the instance URL in ServiceNow settings first."
+    );
   }
 
   const originPattern = `${normalized}/*`;
   const permissionPayload = { origins: [originPattern] };
-
   const hasPermission = await permissionsContains(permissionPayload);
   if (hasPermission) {
     return { status: "success" };
@@ -565,11 +715,11 @@ async function ensureServiceNowPermission(instanceUrl) {
 
   const granted = await permissionsRequest(permissionPayload);
   if (!granted) {
-    return {
-      status: "error",
-      code: "SN_NO_CONFIG",
-      message: "Permission for the ServiceNow instance was not granted.",
-    };
+    return createSnError(
+      "SN_PERMISSION_DENIED",
+      "ServiceNow host permission was not granted.",
+      `Approve access for ${normalized}, then retry Connect.`
+    );
   }
 
   return { status: "success" };
@@ -577,46 +727,171 @@ async function ensureServiceNowPermission(instanceUrl) {
 
 async function findActiveSessionTab(config) {
   if (!config.enabled || !config.instanceUrl) {
-    return {
-      status: "error",
-      code: "SN_NO_CONFIG",
-      message: "ServiceNow integration is not configured.",
-    };
+    return createSnError(
+      "SN_NO_CONFIG",
+      "ServiceNow integration is not configured.",
+      "Enable integration and save a valid instance URL first."
+    );
   }
 
   const tabs = await queryTabs({ url: `${config.instanceUrl}/*` });
   if (!tabs || tabs.length === 0) {
-    return {
-      status: "error",
-      code: "SN_NO_TAB",
-      message: `Open and log in to ${config.instanceUrl} in a browser tab, then retry.`,
-    };
+    return createSnError(
+      "SN_NO_TAB",
+      `No active tab for ${config.instanceUrl} was found.`,
+      `Open and log in to ${config.instanceUrl} in a browser tab, then retry.`
+    );
   }
 
-  return { status: "success", data: tabs[0] };
+  const preferredTabs = [...tabs].sort((a, b) => {
+    if (a.id === lastConnectedSnTabId) {
+      return -1;
+    }
+    if (b.id === lastConnectedSnTabId) {
+      return 1;
+    }
+    if (a.active && !b.active) {
+      return -1;
+    }
+    if (!a.active && b.active) {
+      return 1;
+    }
+    const aLastAccessed = Number(a.lastAccessed) || 0;
+    const bLastAccessed = Number(b.lastAccessed) || 0;
+    return bLastAccessed - aLastAccessed;
+  });
+
+  return { status: "success", data: preferredTabs };
 }
 
-function serviceNowCheckSessionPage() {
-  const userId = window.NOW?.user?.userID || window.g_user?.userID || null;
-  if (!userId) {
-    return {
-      status: "error",
-      code: "SN_NOT_LOGGED_IN",
-      message: "No active ServiceNow session found in this tab.",
-    };
+async function ensureSnBridgeReady(tabId) {
+  try {
+    const ping = await tabsSendMessage(tabId, { action: "sn_bridge_ping" });
+    if (ping?.status === "success") {
+      return { status: "success" };
+    }
+  } catch {
+    // Continue with bootstrap fallback.
   }
 
-  return {
-    status: "success",
-    data: {
-      userId,
-      userName:
-        window.NOW?.user?.name ||
-        window.NOW?.user?.user_name ||
-        window.g_user?.userName ||
-        "",
-    },
+  try {
+    await executeScriptFileOnTab(tabId, ["sn_content_bridge.js"]);
+    const ping = await tabsSendMessage(tabId, { action: "sn_bridge_ping" });
+    if (ping?.status === "success") {
+      return { status: "success" };
+    }
+    return createSnError(
+      "SN_API_ERROR",
+      "ServiceNow bridge is not ready in the active tab.",
+      "Reload the ServiceNow tab and retry."
+    );
+  } catch (error) {
+    return createSnError(
+      "SN_API_ERROR",
+      error?.message || "Unable to initialize ServiceNow bridge.",
+      "Reload the ServiceNow tab and retry Connect."
+    );
+  }
+}
+
+async function sendSnBridgeRequest(tabId, instanceOrigin, action, payload = {}) {
+  const bridgeReady = await ensureSnBridgeReady(tabId);
+  if (bridgeReady.status !== "success") {
+    return bridgeReady;
+  }
+
+  const envelope = {
+    requestId: createSnRequestId(),
+    action,
+    payload,
+    timeoutMs: SN_BRIDGE_TIMEOUT_MS,
   };
+
+  try {
+    const response = await tabsSendMessage(tabId, {
+      action: "sn_bridge_request",
+      instanceOrigin,
+      envelope,
+    });
+
+    if (!response) {
+      return createSnError(
+        "SN_API_ERROR",
+        "ServiceNow bridge did not return a response.",
+        "Reload the ServiceNow tab and retry."
+      );
+    }
+
+    if (response.status === "success") {
+      return response;
+    }
+
+    return createSnError(
+      response.code || "SN_API_ERROR",
+      response.message || "ServiceNow request failed.",
+      response.data?.recoveryHint || "Retry after reloading the ServiceNow tab."
+    );
+  } catch (error) {
+    return createSnError(
+      "SN_API_ERROR",
+      error?.message || "Failed to communicate with ServiceNow tab.",
+      "Ensure the ServiceNow tab is open and reload it."
+    );
+  }
+}
+
+async function connectServiceNowSession() {
+  const config = await getServiceNowConfig();
+  if (!config.enabled || !config.instanceUrl) {
+    return createSnError(
+      "SN_NO_CONFIG",
+      "ServiceNow integration is disabled or missing URL.",
+      "Enable integration and save a valid instance URL."
+    );
+  }
+
+  const permissionResponse = await ensureServiceNowPermission(config.instanceUrl);
+  if (permissionResponse.status !== "success") {
+    return permissionResponse;
+  }
+
+  const tabResponse = await findActiveSessionTab(config);
+  if (tabResponse.status !== "success") {
+    return tabResponse;
+  }
+
+  const tabCandidates = Array.isArray(tabResponse.data) ? tabResponse.data : [];
+  let lastSessionError = null;
+
+  for (const tab of tabCandidates) {
+    const sessionResponse = await sendSnBridgeRequest(tab.id, config.instanceUrl, "checkSession");
+    if (sessionResponse.status === "success") {
+      lastConnectedSnTabId = tab.id;
+      lastConnectedSnUserId = sessionResponse.data?.userId || "";
+      return {
+        status: "success",
+        data: {
+          instanceUrl: config.instanceUrl,
+          tabId: tab.id,
+          userId: sessionResponse.data?.userId || "",
+          userName: sessionResponse.data?.userName || "",
+        },
+      };
+    }
+
+    lastSessionError = sessionResponse;
+  }
+
+  lastConnectedSnTabId = null;
+  lastConnectedSnUserId = "";
+  return (
+    lastSessionError ||
+    createSnError(
+      "SN_NOT_LOGGED_IN",
+      "No active ServiceNow session was found in open instance tabs.",
+      `Open and log in to ${config.instanceUrl} and retry.`
+    )
+  );
 }
 
 function readDisplayValue(value) {
@@ -631,379 +906,97 @@ function readDisplayValue(value) {
   return value || "";
 }
 
-function serviceNowFetchTimecardsPage() {
-  const userId = window.NOW?.user?.userID || window.g_user?.userID || null;
-  if (!userId) {
-    return Promise.resolve({
-      status: "error",
-      code: "SN_NOT_LOGGED_IN",
-      message: "No active ServiceNow session found in this tab.",
-    });
+async function serviceNowCheckSession() {
+  return connectServiceNowSession();
+}
+
+async function serviceNowFetchLookups() {
+  const connectResponse = await connectServiceNowSession();
+  if (connectResponse.status !== "success") {
+    return connectResponse;
   }
 
-  const query = `user=${encodeURIComponent(userId)}`;
-  const endpoint = `/api/now/table/time_card?sysparm_display_value=all&sysparm_exclude_reference_link=true&sysparm_limit=500&sysparm_query=${query}`;
+  const pageResponse = await sendSnBridgeRequest(
+    connectResponse.data.tabId,
+    connectResponse.data.instanceUrl,
+    "fetchLookups",
+    {
+      userId: connectResponse.data.userId || lastConnectedSnUserId || "",
+    }
+  );
+  if (pageResponse.status !== "success") {
+    return pageResponse;
+  }
 
-  return fetch(endpoint, {
-    method: "GET",
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-    },
-  })
-    .then(async (response) => {
-      if (response.status === 401 || response.status === 403) {
-        return {
-          status: "error",
-          code: "SN_NOT_LOGGED_IN",
-          message: "ServiceNow session is not authenticated.",
-        };
-      }
+  const tasks = Array.isArray(pageResponse.data?.tasks)
+    ? pageResponse.data.tasks
+        .map((item) => ({
+          sys_id: readDisplayValue(item.sys_id),
+          number: String(readDisplayValue(item.number) || ""),
+          short_description: String(readDisplayValue(item.short_description) || ""),
+          state: String(readDisplayValue(item.state) || ""),
+        }))
+        .filter((item) => item.sys_id)
+    : [];
 
-      if (!response.ok) {
-        return {
-          status: "error",
-          code: "SN_API_ERROR",
-          message: `Failed to fetch timecards (${response.status}).`,
-        };
-      }
-
-      const payload = await response.json();
-      const rawItems = Array.isArray(payload.result) ? payload.result : [];
-
-      const items = rawItems
+  const categories = Array.isArray(pageResponse.data?.categories)
+    ? pageResponse.data.categories
         .map((item) => {
-          const stateDisplay = String(readDisplayValue(item.state) || "");
+          const sequenceValue = Number(readDisplayValue(item.sequence));
           return {
             sys_id: readDisplayValue(item.sys_id),
-            number: String(readDisplayValue(item.number) || ""),
-            short_description: String(readDisplayValue(item.short_description) || ""),
-            state: String(readDisplayValue(item.state) || ""),
-            stateDisplay,
+            value: String(readDisplayValue(item.value) || ""),
+            label: String(readDisplayValue(item.label) || ""),
+            language: String(readDisplayValue(item.language) || ""),
+            sequence: Number.isFinite(sequenceValue) ? sequenceValue : 0,
           };
         })
-        .filter((item) => item.sys_id)
-        .filter((item) => {
-          const stateText = `${item.state} ${item.stateDisplay}`.toLowerCase();
-          return !stateText.includes("closed") && !stateText.includes("resolved");
-        });
+        .filter((item) => item.sys_id && item.value)
+        .filter((item) => item.language === "en")
+        .sort((a, b) => a.sequence - b.sequence)
+    : [];
 
-      return { status: "success", data: items };
-    })
-    .catch((error) => ({
-      status: "error",
-      code: "SN_API_ERROR",
-      message: error?.message || "Unexpected ServiceNow fetch error.",
-    }));
-}
-
-function serviceNowUpdateTimecardsPage(updatePayloads) {
-  const csrfToken =
-    window.g_ck ||
-    window.NOW?.g_ck ||
-    document.querySelector("meta[name='sysparm_ck']")?.getAttribute("content") ||
-    "";
-
-  const userId = window.NOW?.user?.userID || window.g_user?.userID || null;
-  if (!userId) {
-    return Promise.resolve({
-      status: "error",
-      code: "SN_NOT_LOGGED_IN",
-      message: "No active ServiceNow session found in this tab.",
-    });
-  }
-
-  if (!csrfToken) {
-    return Promise.resolve({
-      status: "error",
-      code: "SN_CSRF_MISSING",
-      message: "ServiceNow CSRF token is not available in the active session.",
-    });
-  }
-
-  const updates = Array.isArray(updatePayloads) ? updatePayloads : [];
-
-  return Promise.all(
-    updates.map(async (update) => {
-      try {
-        const response = await fetch(
-          `/api/now/table/time_card/${encodeURIComponent(update.sys_id)}`,
-          {
-            method: "PATCH",
-            credentials: "include",
-            headers: {
-              Accept: "application/json",
-              "Content-Type": "application/json",
-              "X-UserToken": csrfToken,
-            },
-            body: JSON.stringify({
-              hours: String(update.hours),
-            }),
-          }
-        );
-
-        if (!response.ok) {
+  const timeCodes = Array.isArray(pageResponse.data?.timeCodes)
+    ? pageResponse.data.timeCodes
+        .map((item) => {
+          const codeValue = String(readDisplayValue(item.u_time_card_code) || "");
+          const descriptionValue = String(readDisplayValue(item.u_description) || "");
           return {
-            sys_id: update.sys_id,
-            status: "error",
-            message: `Update failed (${response.status}).`,
+            sys_id: readDisplayValue(item.sys_id),
+            u_time_card_code: codeValue,
+            u_description: descriptionValue,
+            label: descriptionValue ? `${codeValue} | ${descriptionValue}` : codeValue,
           };
-        }
+        })
+        .filter((item) => item.sys_id && item.u_time_card_code)
+    : [];
 
-        return {
-          sys_id: update.sys_id,
-          status: "success",
-        };
-      } catch (error) {
-        return {
-          sys_id: update.sys_id,
-          status: "error",
-          message: error?.message || "Unexpected update error.",
-        };
-      }
-    })
-  ).then((results) => ({ status: "success", data: results }));
-}
-
-async function serviceNowCheckSession() {
-  const config = await getServiceNowConfig();
-  const tabResponse = await findActiveSessionTab(config);
-  if (tabResponse.status !== "success") {
-    return tabResponse;
-  }
-
-  try {
-    const pageResponse = await executeScriptOnTab(
-      tabResponse.data.id,
-      serviceNowCheckSessionPage
-    );
-    if (!pageResponse || pageResponse.status !== "success") {
-      return (
-        pageResponse || {
-          status: "error",
-          code: "SN_NOT_LOGGED_IN",
-          message: "Unable to validate ServiceNow session.",
-        }
-      );
-    }
-
-    return {
-      status: "success",
-      data: {
-        tabId: tabResponse.data.id,
-        ...pageResponse.data,
-      },
-    };
-  } catch (error) {
-    return {
-      status: "error",
-      code: "SN_API_ERROR",
-      message: error?.message || "Unable to validate ServiceNow session.",
-    };
-  }
-}
-
-async function serviceNowFetchTimecards() {
-  const config = await getServiceNowConfig();
-  const tabResponse = await findActiveSessionTab(config);
-  if (tabResponse.status !== "success") {
-    return tabResponse;
-  }
-
-  try {
-    const pageResponse = await executeScriptOnTab(
-      tabResponse.data.id,
-      serviceNowFetchTimecardsPage
-    );
-
-    if (!pageResponse || pageResponse.status !== "success") {
-      return (
-        pageResponse || {
-          status: "error",
-          code: "SN_API_ERROR",
-          message: "Failed to fetch ServiceNow timecards.",
-        }
-      );
-    }
-
-    const cache = {
-      fetchedAtMs: Date.now(),
-      items: pageResponse.data,
-    };
-
-    await storageSet({ [SN_TIMECARDS_CACHE_KEY]: cache });
-    return { status: "success", data: cache };
-  } catch (error) {
-    return {
-      status: "error",
-      code: "SN_API_ERROR",
-      message: error?.message || "Failed to fetch ServiceNow timecards.",
-    };
-  }
-}
-
-async function getCachedTimecards() {
-  const result = await storageGet([SN_TIMECARDS_CACHE_KEY]);
-  const cache = result[SN_TIMECARDS_CACHE_KEY] || { fetchedAtMs: 0, items: [] };
-  if (!Array.isArray(cache.items)) {
-    return { fetchedAtMs: 0, items: [] };
-  }
-  return cache;
-}
-
-async function linkBlockTimecard(blockId, snData) {
-  if (!blockId) {
-    return { status: "error", message: "Block id is required." };
-  }
-
-  const blocks = await getTimeBlocks();
-  const blockIndex = blocks.findIndex((block) => block.id === blockId);
-  if (blockIndex === -1) {
-    return { status: "error", message: "Time block not found." };
-  }
-
-  blocks[blockIndex] = withServiceNowMetadata(blocks[blockIndex], snData);
-  await saveTimeBlocks(blocks);
-  return { status: "success", data: blocks[blockIndex] };
-}
-
-function durationToRoundedHours(durationMs) {
-  const hours = durationMs / (1000 * 60 * 60);
-  return Number(hours.toFixed(2));
-}
-
-async function serviceNowSync() {
-  const config = await getServiceNowConfig();
-  if (!config.enabled) {
-    return {
-      status: "error",
-      code: "SN_NO_CONFIG",
-      message: "ServiceNow integration is disabled.",
-    };
-  }
-
-  const tabResponse = await findActiveSessionTab(config);
-  if (tabResponse.status !== "success") {
-    return tabResponse;
-  }
-
-  const blocks = await getTimeBlocks();
-  const linkedBlocks = blocks.filter((block) => block.snTimecardSysId);
-
-  if (linkedBlocks.length === 0) {
-    const report = { syncedAtMs: Date.now(), results: [] };
-    await storageSet({ [SN_LAST_SYNC_REPORT_KEY]: report });
-    return { status: "success", data: report };
-  }
-
-  const grouped = new Map();
-  for (const block of linkedBlocks) {
-    if (!grouped.has(block.snTimecardSysId)) {
-      grouped.set(block.snTimecardSysId, {
-        sys_id: block.snTimecardSysId,
-        label: block.snTimecardLabel || block.snTimecardSysId,
-        totalDurationMs: 0,
-      });
-    }
-    grouped.get(block.snTimecardSysId).totalDurationMs += block.durationMs;
-  }
-
-  const updates = Array.from(grouped.values()).map((entry) => ({
-    sys_id: entry.sys_id,
-    hours: durationToRoundedHours(entry.totalDurationMs),
-  }));
-
-  let pageResult;
-  try {
-    pageResult = await executeScriptOnTab(
-      tabResponse.data.id,
-      serviceNowUpdateTimecardsPage,
-      [updates]
-    );
-  } catch (error) {
-    return {
-      status: "error",
-      code: "SN_API_ERROR",
-      message: error?.message || "Failed to sync ServiceNow timecards.",
-    };
-  }
-
-  if (!pageResult || pageResult.status !== "success") {
-    return (
-      pageResult || {
-        status: "error",
-        code: "SN_API_ERROR",
-        message: "Failed to sync ServiceNow timecards.",
-      }
-    );
-  }
-
-  const results = Array.isArray(pageResult.data) ? pageResult.data : [];
-  const resultById = new Map(results.map((item) => [item.sys_id, item]));
-
-  const nowMs = Date.now();
-  const updatedBlocks = blocks.map((block) => {
-    if (!block.snTimecardSysId) {
-      return block;
-    }
-    const remoteResult = resultById.get(block.snTimecardSysId);
-    if (!remoteResult) {
-      return {
-        ...block,
-        snSyncState: "error",
-        snLastSyncError: "No sync response for linked timecard.",
-      };
-    }
-    if (remoteResult.status === "success") {
-      const updateInfo = grouped.get(block.snTimecardSysId);
-      return {
-        ...block,
-        snSyncState: "synced",
-        snLastSyncedAtMs: nowMs,
-        snLastSyncedHours: durationToRoundedHours(updateInfo.totalDurationMs),
-        snLastSyncError: "",
-      };
-    }
-    return {
-      ...block,
-      snSyncState: "error",
-      snLastSyncError: remoteResult.message || "Sync failed for linked timecard.",
-    };
-  });
-
-  await saveTimeBlocks(updatedBlocks);
-
-  const report = {
-    syncedAtMs: nowMs,
-    results: Array.from(grouped.values()).map((entry) => {
-      const remoteResult = resultById.get(entry.sys_id);
-      return {
-        sys_id: entry.sys_id,
-        label: entry.label,
-        hours: durationToRoundedHours(entry.totalDurationMs),
-        status: remoteResult?.status || "error",
-        message: remoteResult?.message || "No response",
-      };
-    }),
+  const cache = {
+    fetchedAtMs: Date.now(),
+    tasks,
+    categories,
+    timeCodes,
   };
-  await storageSet({ [SN_LAST_SYNC_REPORT_KEY]: report });
 
-  const hasFailure = report.results.some((item) => item.status !== "success");
-  if (hasFailure) {
-    return {
-      status: "error",
-      code: "SN_SYNC_PARTIAL",
-      message: "Some ServiceNow timecards failed to sync.",
-      data: report,
-    };
-  }
-
-  return { status: "success", data: report };
+  await storageSet({ [SN_LOOKUP_CACHE_KEY]: cache });
+  return { status: "success", data: cache };
 }
 
-async function getServiceNowLastSyncReport() {
-  const result = await storageGet([SN_LAST_SYNC_REPORT_KEY]);
-  return result[SN_LAST_SYNC_REPORT_KEY] || { syncedAtMs: 0, results: [] };
+async function getCachedLookups() {
+  const result = await storageGet([SN_LOOKUP_CACHE_KEY]);
+  const cache = result[SN_LOOKUP_CACHE_KEY] || {
+    fetchedAtMs: 0,
+    tasks: [],
+    categories: [],
+    timeCodes: [],
+  };
+
+  return {
+    fetchedAtMs: Number(cache.fetchedAtMs) || 0,
+    tasks: Array.isArray(cache.tasks) ? cache.tasks : [],
+    categories: Array.isArray(cache.categories) ? cache.categories : [],
+    timeCodes: Array.isArray(cache.timeCodes) ? cache.timeCodes : [],
+  };
 }
 
 function transformMilisecondsToTime(miliseconds) {
@@ -1031,14 +1024,13 @@ function getTimeStringFromMs(ms) {
 async function clearSessions() {
   await storageSet({
     [TIME_BLOCKS_KEY]: [],
-    [LEGACY_SESSIONS_KEY]: [],
   });
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   (async () => {
     if (request.action === "start") {
-      const response = await startTimer(request.taskName);
+      const response = await startTimer(request.taskName, request.taskData || {});
       sendResponse(response);
     } else if (request.action === "stop") {
       const response = await stopTimer();
@@ -1051,9 +1043,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         timerData.elapsedTime = elapsedBeforeActiveMs + (Date.now() - activeBlockStartMs);
       }
       sendResponse({ timerData });
-    } else if (request.action === "saveSession") {
-      const response = await saveSession(request.task, request.newTime);
-      sendResponse(response);
     } else if (request.action === "saveManualSession") {
       const response = await saveManualSession(request.taskData);
       sendResponse(response);
@@ -1064,7 +1053,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const response = await deleteTimeBlock(request.blockId);
       sendResponse(response);
     } else if (request.action === "getSessions" || request.action === "getAggregatedSessions") {
-      const sessions = await getMergedAggregatedSessions();
+      const sessions = await getAggregatedSessions();
       sendResponse({ status: "success", data: sessions });
     } else if (request.action === "getTimeBlocks") {
       const blocks = await getTimeBlocks();
@@ -1082,42 +1071,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else if (request.action === "servicenow/saveConfig") {
       const response = await saveServiceNowConfig(request.config);
       sendResponse(response);
-    } else if (request.action === "servicenow/ensurePermission") {
-      const config = await getServiceNowConfig();
-      const response = await ensureServiceNowPermission(config.instanceUrl);
-      sendResponse(response);
-    } else if (request.action === "servicenow/findActiveSessionTab") {
-      const config = await getServiceNowConfig();
-      const response = await findActiveSessionTab(config);
+    } else if (request.action === "servicenow/connect") {
+      const response = await connectServiceNowSession();
       sendResponse(response);
     } else if (request.action === "servicenow/checkSession") {
       const response = await serviceNowCheckSession();
       sendResponse(response);
-    } else if (request.action === "servicenow/fetchTimecards") {
-      const config = await getServiceNowConfig();
-      const permissionResponse = await ensureServiceNowPermission(config.instanceUrl);
-      if (permissionResponse.status !== "success") {
-        sendResponse(permissionResponse);
-        return;
-      }
-      const response = await serviceNowFetchTimecards();
+    } else if (request.action === "servicenow/fetchLookups") {
+      const response = await serviceNowFetchLookups();
       sendResponse(response);
-    } else if (request.action === "servicenow/getCachedTimecards") {
-      sendResponse({ status: "success", data: await getCachedTimecards() });
-    } else if (request.action === "servicenow/linkBlockTimecard") {
-      const response = await linkBlockTimecard(request.blockId, request.snData || {});
-      sendResponse(response);
-    } else if (request.action === "servicenow/sync") {
-      const config = await getServiceNowConfig();
-      const permissionResponse = await ensureServiceNowPermission(config.instanceUrl);
-      if (permissionResponse.status !== "success") {
-        sendResponse(permissionResponse);
-        return;
-      }
-      const response = await serviceNowSync();
-      sendResponse(response);
-    } else if (request.action === "servicenow/getLastSyncReport") {
-      sendResponse({ status: "success", data: await getServiceNowLastSyncReport() });
+    } else if (request.action === "servicenow/getCachedLookups") {
+      sendResponse({ status: "success", data: await getCachedLookups() });
     } else {
       sendResponse({ status: "error", message: "Unsupported action." });
     }

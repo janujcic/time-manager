@@ -1,6 +1,7 @@
 let currentTaskName = "";
+let snConfig = { enabled: false, instanceUrl: "" };
+let snLookupCache = { fetchedAtMs: 0, tasks: [], categories: [], timeCodes: [] };
 
-const taskNameInput = document.getElementById("task_name");
 const taskNameError = document.getElementById("task-name-error");
 const enterStartTask = document.querySelector(".enter-start-task");
 const runningTask = document.querySelector(".running-task");
@@ -10,15 +11,31 @@ const startButton = document.getElementById("start-button");
 const resumeButton = document.getElementById("resume-button");
 const stopButton = document.getElementById("stop-button");
 const finishButton = document.getElementById("finish-button");
+const mainSnAssignmentWrap = document.getElementById("main-sn-assignment-wrap");
+const mainSnAssignmentInput = document.getElementById("main-sn-assignment-input");
+const mainSnAssignmentList = document.getElementById("main-sn-assignment-list");
+const mainSnCodeWrap = document.getElementById("main-sn-code-wrap");
+const mainSnCodeSelect = document.getElementById("main-sn-code-select");
 
 function showTaskNameError(message) {
   taskNameError.textContent = message;
-  taskNameInput.classList.add("input-error");
+  mainSnAssignmentInput.classList.add("input-error");
 }
 
 function clearTaskNameError() {
   taskNameError.textContent = "";
-  taskNameInput.classList.remove("input-error");
+  mainSnAssignmentInput.classList.remove("input-error");
+}
+
+function showMainSnError(message) {
+  taskNameError.textContent = message;
+  mainSnAssignmentInput.classList.add("input-error");
+  mainSnCodeSelect.classList.add("input-error");
+}
+
+function clearMainSnError() {
+  mainSnAssignmentInput.classList.remove("input-error");
+  mainSnCodeSelect.classList.remove("input-error");
 }
 
 function transformMilisecondsToTime(miliseconds) {
@@ -51,6 +68,147 @@ function showRegistrationState() {
   startButton.style.display = "inline-block";
   elapsedTimeDisplay.textContent = "0h 0m 0s";
   currentTaskName = "";
+  clearMainSnError();
+}
+
+function updateMainSnVisibility() {
+  mainSnAssignmentWrap.style.display = "flex";
+  mainSnCodeWrap.style.display = snConfig.enabled ? "flex" : "none";
+}
+
+function getAllAssignmentOptions() {
+  const taskOptions = (Array.isArray(snLookupCache.tasks) ? snLookupCache.tasks : []).map((task) => ({
+    id: `task:${task.sys_id}`,
+    label: `[Task] ${task.number || task.sys_id} - ${task.short_description || ""}`,
+    kind: "task",
+    data: task,
+  }));
+
+  const categoryOptions = (Array.isArray(snLookupCache.categories) ? snLookupCache.categories : [])
+    .filter((category) => category.value !== "task_work")
+    .map((category) => ({
+      id: `category:${category.sys_id}`,
+      label: `[Category] ${category.label || category.value} (${category.value || ""})`,
+      kind: "category",
+      data: category,
+    }));
+
+  return [...taskOptions, ...categoryOptions];
+}
+
+function filterAssignmentOptions(queryText) {
+  const query = String(queryText || "").trim().toLowerCase();
+  if (!query) {
+    return getAllAssignmentOptions();
+  }
+
+  return getAllAssignmentOptions().filter((item) => {
+    if (item.kind === "task") {
+      const haystack = `${item.data.number || ""} ${item.data.short_description || ""}`.toLowerCase();
+      return haystack.includes(query);
+    }
+
+    const haystack = `${item.data.label || ""} ${item.data.value || ""}`.toLowerCase();
+    return haystack.includes(query);
+  });
+}
+
+function renderMainAssignmentOptions(selectedLabel = "") {
+  const query = mainSnAssignmentInput.value;
+  const options = filterAssignmentOptions(query);
+  mainSnAssignmentList.innerHTML = "";
+
+  options.forEach((item) => {
+    const option = document.createElement("option");
+    option.value = item.label;
+    mainSnAssignmentList.appendChild(option);
+  });
+
+  if (selectedLabel) {
+    mainSnAssignmentInput.value = selectedLabel;
+  }
+}
+
+function renderMainCodeOptions(selectedCodeSysId = "") {
+  const timeCodes = Array.isArray(snLookupCache.timeCodes) ? snLookupCache.timeCodes : [];
+
+  mainSnCodeSelect.innerHTML = "";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = timeCodes.length === 0 ? "No time codes available" : "Select time code";
+  mainSnCodeSelect.appendChild(placeholder);
+
+  timeCodes.forEach((code) => {
+    const option = document.createElement("option");
+    option.value = code.sys_id;
+    option.textContent = code.label || code.u_time_card_code || code.sys_id;
+    mainSnCodeSelect.appendChild(option);
+  });
+
+  if (selectedCodeSysId) {
+    mainSnCodeSelect.value = selectedCodeSysId;
+  }
+}
+
+function getSelectedAssignment() {
+  const typedValue = String(mainSnAssignmentInput.value || "").trim();
+  if (!typedValue) {
+    return null;
+  }
+
+  return getAllAssignmentOptions().find((item) => item.label === typedValue) || null;
+}
+
+function getSelectedCodeData() {
+  const selectedCodeSysId = mainSnCodeSelect.value;
+  if (!selectedCodeSysId) {
+    return null;
+  }
+
+  const timeCodes = Array.isArray(snLookupCache.timeCodes) ? snLookupCache.timeCodes : [];
+  return timeCodes.find((item) => item.sys_id === selectedCodeSysId) || null;
+}
+
+function getAssignmentLabelFromTimerData(timerData) {
+  if (!timerData) {
+    return "";
+  }
+
+  if (timerData.snSelectionType === "task" && timerData.snTaskSysId) {
+    const matched = getAllAssignmentOptions().find((item) => item.id === `task:${timerData.snTaskSysId}`);
+    return matched?.label || timerData.savedTaskName || "";
+  }
+
+  if (timerData.snSelectionType === "category" && timerData.snCategorySysId) {
+    const matched = getAllAssignmentOptions().find(
+      (item) => item.id === `category:${timerData.snCategorySysId}`
+    );
+    return matched?.label || timerData.savedTaskName || "";
+  }
+
+  return timerData.savedTaskName || "";
+}
+
+function loadMainSnConfigAndLookups() {
+  chrome.runtime.sendMessage({ action: "servicenow/getConfig" }, (configResponse) => {
+    if (configResponse?.status === "success") {
+      snConfig = configResponse.data || { enabled: false, instanceUrl: "" };
+      updateMainSnVisibility();
+    }
+  });
+
+  chrome.runtime.sendMessage({ action: "servicenow/getCachedLookups" }, (cacheResponse) => {
+    if (cacheResponse?.status === "success") {
+      snLookupCache = cacheResponse.data || {
+        fetchedAtMs: 0,
+        tasks: [],
+        categories: [],
+        timeCodes: [],
+      };
+      renderMainAssignmentOptions();
+      renderMainCodeOptions();
+    }
+  });
 }
 
 function refreshFromBackground() {
@@ -62,9 +220,11 @@ function refreshFromBackground() {
     }
 
     currentTaskName = timerData.savedTaskName || "";
-    elapsedTimeDisplay.textContent = transformMilisecondsToTime(
-      timerData.elapsedTime || 0
-    );
+    mainSnAssignmentInput.value = currentTaskName;
+    elapsedTimeDisplay.textContent = transformMilisecondsToTime(timerData.elapsedTime || 0);
+
+    renderMainAssignmentOptions(getAssignmentLabelFromTimerData(timerData));
+    renderMainCodeOptions(timerData.snCodeSysId || "");
 
     if (currentTaskName) {
       showRunningState(Boolean(timerData.isRunning));
@@ -74,19 +234,72 @@ function refreshFromBackground() {
   });
 }
 
-document.addEventListener("DOMContentLoaded", function () {
+document.addEventListener("DOMContentLoaded", () => {
+  loadMainSnConfigAndLookups();
+  mainSnAssignmentInput.addEventListener("input", () => {
+    if (mainSnAssignmentInput.value.trim()) {
+      clearTaskNameError();
+    }
+    clearMainSnError();
+    renderMainAssignmentOptions();
+  });
+  mainSnCodeSelect.addEventListener("change", () => {
+    clearMainSnError();
+  });
   refreshFromBackground();
 });
 
-startButton.addEventListener("click", function () {
-  const taskName = taskNameInput.value.trim();
+startButton.addEventListener("click", () => {
+  let taskName = mainSnAssignmentInput.value.trim();
   if (!taskName) {
-    showTaskNameError("Please enter a task name before starting the timer.");
+    showTaskNameError("Please enter a task before starting the timer.");
     return;
   }
 
+  const taskData = {};
+
+  if (snConfig.enabled) {
+    const selectedAssignment = getSelectedAssignment();
+    const selectedCode = getSelectedCodeData();
+
+    if (!selectedCode) {
+      clearTaskNameError();
+      showMainSnError("Please select a time code.");
+      return;
+    }
+
+    if (selectedAssignment?.kind === "task") {
+      taskData.snSelectionType = "task";
+      taskData.snTaskSysId = selectedAssignment.data.sys_id || "";
+      taskData.snTaskNumber = selectedAssignment.data.number || "";
+      taskData.snTaskShortDescription = selectedAssignment.data.short_description || "";
+      taskName = `${selectedAssignment.data.number || ""} - ${
+        selectedAssignment.data.short_description || ""
+      }`.trim();
+      taskData.snCategoryValue = "task_work";
+      taskData.snCategoryLabel = "Task Work";
+      const taskWorkCategory = (snLookupCache.categories || []).find(
+        (category) => category.value === "task_work"
+      );
+      taskData.snCategorySysId = taskWorkCategory?.sys_id || "";
+    } else if (selectedAssignment?.kind === "category") {
+      taskData.snSelectionType = "category";
+      taskData.snCategorySysId = selectedAssignment.data.sys_id || "";
+      taskData.snCategoryValue = selectedAssignment.data.value || "";
+      taskData.snCategoryLabel = selectedAssignment.data.label || "";
+      taskName = selectedAssignment.data.label || selectedAssignment.data.value || taskName;
+    } else {
+      taskData.snCommentText = taskName;
+    }
+
+    taskData.snCodeSysId = selectedCode.sys_id || "";
+    taskData.snCodeValue = selectedCode.u_time_card_code || "";
+    taskData.snCodeDescription = selectedCode.u_description || "";
+  }
+
   clearTaskNameError();
-  chrome.runtime.sendMessage({ action: "start", taskName }, (response) => {
+  clearMainSnError();
+  chrome.runtime.sendMessage({ action: "start", taskName, taskData }, (response) => {
     if (response?.status === "started") {
       currentTaskName = taskName;
       showRunningState(true);
@@ -97,24 +310,21 @@ startButton.addEventListener("click", function () {
   });
 });
 
-resumeButton.addEventListener("click", function () {
+resumeButton.addEventListener("click", () => {
   if (!currentTaskName) {
     showRegistrationState();
     return;
   }
 
-  chrome.runtime.sendMessage(
-    { action: "start", taskName: currentTaskName },
-    (response) => {
-      if (response?.status === "started") {
-        showRunningState(true);
-        refreshFromBackground();
-      }
+  chrome.runtime.sendMessage({ action: "start", taskName: currentTaskName }, (response) => {
+    if (response?.status === "started") {
+      showRunningState(true);
+      refreshFromBackground();
     }
-  );
+  });
 });
 
-stopButton.addEventListener("click", function () {
+stopButton.addEventListener("click", () => {
   chrome.runtime.sendMessage({ action: "stop" }, (response) => {
     if (response?.status === "stopped") {
       showRunningState(false);
@@ -123,20 +333,17 @@ stopButton.addEventListener("click", function () {
   });
 });
 
-finishButton.addEventListener("click", function () {
+finishButton.addEventListener("click", () => {
   chrome.runtime.sendMessage({ action: "finish" }, (response) => {
     if (response?.status === "finished") {
       showRegistrationState();
-      taskNameInput.value = "";
+      mainSnAssignmentInput.value = "";
+      mainSnCodeSelect.value = "";
       clearTaskNameError();
+      renderMainAssignmentOptions();
+      renderMainCodeOptions();
     }
   });
-});
-
-taskNameInput.addEventListener("input", () => {
-  if (taskNameInput.value.trim()) {
-    clearTaskNameError();
-  }
 });
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -145,12 +352,10 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 });
 
-document
-  .getElementById("show-log-button")
-  .addEventListener("click", function () {
-    openTimeManagerWindow();
-    window.close();
-  });
+document.getElementById("show-log-button").addEventListener("click", () => {
+  openTimeManagerWindow();
+  window.close();
+});
 
 function openTimeManagerWindow() {
   const width = 980;

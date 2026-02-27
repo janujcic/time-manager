@@ -83,6 +83,30 @@ button {
   row-gap: 10px;
 }
 
+.start-fields-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+  max-width: 360px;
+}
+
+.main-sn-timecard-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+#task_name,
+#main-sn-assignment-input,
+#main-sn-code-select {
+  width: 100%;
+  max-width: 360px;
+  padding: 6px;
+  box-sizing: border-box;
+}
+
 label {
   margin-right: 5px;
 }
@@ -335,17 +359,21 @@ table tr:hover {
 }
 
 #sn-save-config-button,
-#sn-check-session-button,
-#sn-refresh-timecards-button,
-#sn-sync-button {
+#sn-connect-button,
+#sn-refresh-lookups-button {
   background-color: #2f71d3;
 }
 
 #sn-save-config-button:hover,
-#sn-check-session-button:hover,
-#sn-refresh-timecards-button:hover,
-#sn-sync-button:hover {
+#sn-connect-button:hover,
+#sn-refresh-lookups-button:hover {
   background-color: #0254ce;
+}
+
+#sn-connect-button:disabled,
+#sn-refresh-lookups-button:disabled {
+  background-color: #9aa8bc;
+  cursor: not-allowed;
 }
 
 .checkbox-inline {
@@ -354,14 +382,36 @@ table tr:hover {
   gap: 6px;
 }
 
+.sn-connection-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: bold;
+  color: #ffffff;
+}
+
+.sn-connection-badge.connected {
+  background-color: #2e7d32;
+}
+
+.sn-connection-badge.disconnected {
+  background-color: #c62828;
+}
+
+.sn-connection-badge.disabled {
+  background-color: #6b7788;
+}
+
 .task-log > .servicenow-select-wrap {
   display: none;
   flex-direction: column !important;
   align-items: flex-start !important;
 }
 
-#sn-timecard-search,
-#sn-timecard-select {
+#sn-assignment-select,
+#sn-code-select {
   width: 100%;
   min-width: 280px;
   padding: 6px;
