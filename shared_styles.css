@@ -1,3 +1,9 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 button {
   padding: 10px 10px; /* Uniform padding for all buttons */
   color: white;
@@ -113,10 +119,9 @@ button {
 
 .task-log > div {
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-  row-gap: 10px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
 }
 
 .start-fields-row {
@@ -182,13 +187,28 @@ label {
   background-color: white;
   margin: 15% auto;
   padding: 20px;
-  width: 300px;
+  width: min(520px, calc(100vw - 32px));
   border-radius: 8px;
-  text-align: center;
+  text-align: left;
   margin-bottom: 10px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 10px;
+}
+
+.modal-content h2 {
+  margin: 0 0 2px;
+}
+
+#manual-log-error {
+  min-height: 0;
+  margin: 0;
+}
+
+.task-log {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .yes-no-button-row {
@@ -201,6 +221,7 @@ body {
   padding: 20px;
   display: block; /* Use block layout by default for flexibility */
   margin: 0;
+  box-sizing: border-box;
 }
 
 .flex-center {
@@ -238,6 +259,7 @@ table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 10px;
+  table-layout: fixed;
 }
 
 table th,
@@ -245,6 +267,7 @@ table td {
   border: 1px solid #ddd;
   padding: 8px;
   text-align: center;
+  word-break: break-word;
 }
 
 table th {
@@ -288,12 +311,77 @@ table tr:hover {
 }
 
 .dashboard-page {
-  min-width: 920px;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  padding: 12px;
   background: linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
 }
 
 .dashboard-header h2 {
   margin: 0;
+  font-size: 32px;
+  font-weight: 700;
+  color: #142a45;
+  line-height: 1.15;
+}
+
+.dashboard-page #log-display {
+  margin-top: 2px;
+  max-width: none;
+}
+
+.dashboard-header .dashboard-status {
+  margin: 0;
+  min-height: 0;
+}
+
+.dashboard-header .dashboard-status:empty {
+  display: none;
+}
+
+.dashboard-header,
+.tab-bar,
+.dashboard-panel {
+  width: 100%;
+  max-width: 1180px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.dashboard-header {
+  padding: 2px 4px 8px;
+  border-bottom: 1px solid #d5e3f4;
+}
+
+.tab-bar {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.tab-button {
+  background-color: #d7e3f5;
+  color: #1f3047;
+  margin: 0;
+  padding: 8px 14px;
+}
+
+.tab-button:hover {
+  background-color: #c5d8f1;
+}
+
+.tab-button.active {
+  background-color: #2f71d3;
+  color: #ffffff;
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
 }
 
 .dashboard-status {
@@ -306,14 +394,14 @@ table tr:hover {
   background: #ffffff;
   border: 1px solid #dde6f1;
   border-radius: 10px;
-  padding: 16px;
-  margin-top: 12px;
+  padding: 12px 14px;
+  margin-top: 8px;
 }
 
 .dashboard-controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
 }
 
@@ -332,15 +420,20 @@ table tr:hover {
   background-color: #2f71d3;
 }
 
-#apply-custom-range-button:hover {
+#apply-custom-range-button:hover,
+#sn-apply-sync-custom-range-button:hover {
   background-color: #0254ce;
 }
 
+#sn-apply-sync-custom-range-button {
+  background-color: #2f71d3;
+}
+
 .kpi-grid {
-  margin-top: 14px;
+  margin-top: 10px;
   display: grid;
   grid-template-columns: repeat(4, minmax(120px, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .kpi-card {
@@ -363,18 +456,107 @@ table tr:hover {
 }
 
 .dashboard-grid {
-  margin-top: 16px;
+  margin-top: 10px;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: 10px;
 }
 
 .dashboard-section {
-  margin-top: 14px;
+  margin-top: 10px;
 }
 
 .dashboard-section h3 {
   margin: 0 0 8px;
+}
+
+.section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#task-page-prev,
+#task-page-next,
+#block-page-prev,
+#block-page-next {
+  background-color: #2f71d3;
+}
+
+#task-page-prev:hover,
+#task-page-next:hover,
+#block-page-prev:hover,
+#block-page-next:hover {
+  background-color: #0254ce;
+}
+
+#task-page-prev:disabled,
+#task-page-next:disabled,
+#block-page-prev:disabled,
+#block-page-next:disabled {
+  background-color: #9aa8bc;
+  cursor: not-allowed;
+}
+
+.accordion-header {
+  width: 100%;
+  margin: 0;
+  padding: 10px 14px;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #d6e2f2;
+  border-radius: 8px;
+  background: #f7fbff;
+  color: #24364d;
+}
+
+.accordion-header:hover {
+  background: #edf5ff;
+}
+
+.accordion-title {
+  font-size: 18px;
+  font-weight: bold;
+  text-align: left;
+}
+
+.accordion-hint {
+  font-size: 12px;
+  color: #5d6a7a;
+  text-align: right;
+}
+
+.accordion-icon {
+  font-size: 14px;
+  font-weight: bold;
+  line-height: 1;
+  transition: transform 0.15s ease-in-out;
+}
+
+.accordion-header.expanded .accordion-icon {
+  transform: rotate(180deg);
+}
+
+.button-row > button {
+  margin: 0;
+}
+
+#task-pagination-controls,
+#block-pagination-controls {
+  justify-content: center;
+  align-items: center;
+  margin-top: 12px;
+}
+
+#task-page-info,
+#block-page-info {
+  min-width: 92px;
+  text-align: center;
+  font-weight: 600;
+  color: #2f3f54;
 }
 
 .servicenow-panel {
@@ -389,6 +571,16 @@ table tr:hover {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+#servicenow-tab-content .dashboard-controls {
+  margin-bottom: 10px;
+}
+
+.sync-preview-text {
+  font-size: 12px;
+  color: #2f3f54;
+  font-weight: 600;
 }
 
 .servicenow-controls input[type="url"] {
@@ -452,8 +644,38 @@ table tr:hover {
 
 #task-name,
 #sn-code-select,
-#sn-comment-input {
+#sn-comment-input,
+#task-start-date,
+#task-start-time,
+#task-end-date,
+#task-end-time,
+#task-duration-time {
   width: 100%;
-  min-width: 280px;
+  min-width: 0;
   padding: 6px;
+  box-sizing: border-box;
+}
+
+.task-log label {
+  margin-right: 0;
+}
+
+.inline-date-time {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.inline-date-time input[type="date"] { flex: 1 1 45%; }
+.inline-date-time input[type="time"] { flex: 1 1 30%; min-width: 110px; }
+
+#task-start-now-button,
+#task-end-now-button {
+  margin: 0;
+  background-color: #2f71d3;
+}
+
+#task-start-now-button:hover,
+#task-end-now-button:hover {
+  background-color: #0254ce;
 }

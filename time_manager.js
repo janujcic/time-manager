@@ -4,8 +4,13 @@ const saveLogButton = document.getElementById("save-log-button");
 const manualLogError = document.getElementById("manual-log-error");
 const taskNameInput = document.getElementById("task-name");
 const snAssignmentList = document.getElementById("sn-assignment-list");
-const taskStartDatetimeInput = document.getElementById("task-start-datetime");
-const taskEndDatetimeInput = document.getElementById("task-end-datetime");
+const taskStartDateInput = document.getElementById("task-start-date");
+const taskStartTimeInput = document.getElementById("task-start-time");
+const taskEndDateInput = document.getElementById("task-end-date");
+const taskEndTimeInput = document.getElementById("task-end-time");
+const taskStartNowButton = document.getElementById("task-start-now-button");
+const taskEndNowButton = document.getElementById("task-end-now-button");
+const taskDurationTimeInput = document.getElementById("task-duration-time");
 const snCodeWrap = document.getElementById("sn-code-wrap");
 const snCodeSelect = document.getElementById("sn-code-select");
 const snCommentWrap = document.getElementById("sn-comment-wrap");
@@ -31,9 +36,28 @@ const snSaveConfigButton = document.getElementById("sn-save-config-button");
 const snConnectButton = document.getElementById("sn-connect-button");
 const snRefreshLookupsButton = document.getElementById("sn-refresh-lookups-button");
 const snSyncButton = document.getElementById("sn-sync-button");
+const snSyncRangePresetSelect = document.getElementById("sn-sync-range-preset");
+const snSyncCustomRangeControls = document.getElementById("sn-sync-custom-range-controls");
+const snSyncCustomStartDateInput = document.getElementById("sn-sync-custom-start-date");
+const snSyncCustomEndDateInput = document.getElementById("sn-sync-custom-end-date");
+const snApplySyncCustomRangeButton = document.getElementById("sn-apply-sync-custom-range-button");
+const snSyncRangePreview = document.getElementById("sn-sync-range-preview");
 const snStatus = document.getElementById("sn-status");
 const snSyncReport = document.getElementById("sn-sync-report");
 const snConnectionBadge = document.getElementById("sn-connection-badge");
+const dashboardTabButton = document.getElementById("dashboard-tab-button");
+const serviceNowTabButton = document.getElementById("servicenow-tab-button");
+const dashboardTabContent = document.getElementById("dashboard-tab-content");
+const serviceNowTabContent = document.getElementById("servicenow-tab-content");
+const taskPagePrevButton = document.getElementById("task-page-prev");
+const taskPageNextButton = document.getElementById("task-page-next");
+const taskPageInfo = document.getElementById("task-page-info");
+const blockPagePrevButton = document.getElementById("block-page-prev");
+const blockPageNextButton = document.getElementById("block-page-next");
+const blockPageInfo = document.getElementById("block-page-info");
+const toggleBlocksButton = document.getElementById("toggle-blocks-button");
+const toggleBlocksHint = document.getElementById("toggle-blocks-hint");
+const timeBlocksContent = document.getElementById("time-blocks-content");
 
 let allBlocks = [];
 let filteredBlocks = [];
@@ -41,8 +65,15 @@ let editingBlockId = null;
 let snConfig = { enabled: false, instanceUrl: "" };
 let snLookupCache = { fetchedAtMs: 0, tasks: [], categories: [], timeCodes: [] };
 let snConnectionState = { connected: false, code: "", message: "" };
+const TASK_PAGE_SIZE = 5;
+let currentTaskPage = 1;
+const BLOCK_PAGE_SIZE = 5;
+let currentBlockPage = 1;
+let suppressTimeFieldSync = false;
+let areBlocksExpanded = false;
 
 document.addEventListener("DOMContentLoaded", () => {
+  setActiveTab("dashboard");
   bindDashboardEvents();
   loadServiceNowConfig();
   refreshServiceNowLookupsFromCache();
@@ -69,9 +100,64 @@ function bindDashboardEvents() {
   snConnectButton.addEventListener("click", connectServiceNowSession);
   snRefreshLookupsButton.addEventListener("click", fetchServiceNowLookups);
   snSyncButton.addEventListener("click", syncVisibleRangeToServiceNow);
+  snSyncRangePresetSelect.addEventListener("change", () => {
+    snSyncCustomRangeControls.style.display =
+      snSyncRangePresetSelect.value === "custom" ? "flex" : "none";
+    updateServiceNowActionStates();
+    updateSyncRangePreview();
+  });
+  snSyncCustomStartDateInput.addEventListener("change", () => {
+    updateServiceNowActionStates();
+    updateSyncRangePreview();
+  });
+  snSyncCustomEndDateInput.addEventListener("change", () => {
+    updateServiceNowActionStates();
+    updateSyncRangePreview();
+  });
+  snApplySyncCustomRangeButton.addEventListener("click", () => {
+    const bounds = getServiceNowSyncRangeBounds();
+    if (!bounds) {
+      updateSyncRangePreview();
+      return;
+    }
+    const syncBlocks = getBlocksInBounds(allBlocks, bounds);
+    setSnStatus(`Sync range selected. ${syncBlocks.length} block(s) in range.`);
+    updateServiceNowActionStates();
+    updateSyncRangePreview();
+  });
+  dashboardTabButton.addEventListener("click", () => setActiveTab("dashboard"));
+  serviceNowTabButton.addEventListener("click", () => setActiveTab("servicenow"));
+  taskPagePrevButton.addEventListener("click", () => {
+    setTaskPage(currentTaskPage - 1);
+  });
+  taskPageNextButton.addEventListener("click", () => {
+    setTaskPage(currentTaskPage + 1);
+  });
+  blockPagePrevButton.addEventListener("click", () => {
+    setBlockPage(currentBlockPage - 1);
+  });
+  blockPageNextButton.addEventListener("click", () => {
+    setBlockPage(currentBlockPage + 1);
+  });
+  toggleBlocksButton.addEventListener("click", toggleTimeBlocksVisibility);
   taskNameInput.addEventListener("input", onTaskNameInputChanged);
   snCodeSelect.addEventListener("change", clearManualInputBorders);
   snCommentInput.addEventListener("input", clearManualInputBorders);
+  taskStartDateInput.addEventListener("input", onStartDateTimeChanged);
+  taskStartTimeInput.addEventListener("input", onStartDateTimeChanged);
+  taskEndDateInput.addEventListener("input", onEndDateTimeChanged);
+  taskEndTimeInput.addEventListener("input", onEndDateTimeChanged);
+  taskDurationTimeInput.addEventListener("input", onDurationChanged);
+  taskStartNowButton.addEventListener("click", onStartNowClicked);
+  taskEndNowButton.addEventListener("click", onEndNowClicked);
+}
+
+function setActiveTab(tabName) {
+  const showDashboard = tabName === "dashboard";
+  dashboardTabButton.classList.toggle("active", showDashboard);
+  serviceNowTabButton.classList.toggle("active", !showDashboard);
+  dashboardTabContent.classList.toggle("active", showDashboard);
+  serviceNowTabContent.classList.toggle("active", !showDashboard);
 }
 
 function setSnStatus(message) {
@@ -86,7 +172,7 @@ function updateServiceNowUiVisibility() {
   const visible = Boolean(snConfig.enabled);
   snCodeWrap.style.display = visible ? "flex" : "none";
   snCommentWrap.style.display = visible ? "flex" : "none";
-  snSyncButton.style.display = visible && rangePresetSelect.value !== "all" ? "inline-block" : "none";
+  snSyncButton.style.display = visible ? "inline-block" : "none";
   updateServiceNowActionStates();
   updateSnConnectionBadge();
 }
@@ -111,10 +197,30 @@ function updateSnConnectionBadge() {
 function updateServiceNowActionStates() {
   const enabled = Boolean(snConfig.enabled);
   const connected = enabled && snConnectionState.connected;
-  const canSyncRange = enabled && rangePresetSelect.value !== "all";
+  const syncBounds = getServiceNowSyncRangeBounds({ silent: true });
+  const syncBlocks = syncBounds ? getBlocksInBounds(allBlocks, syncBounds) : [];
+  const canSyncRange = enabled && Boolean(syncBounds) && syncBlocks.length > 0;
   snConnectButton.disabled = !enabled;
   snRefreshLookupsButton.disabled = !connected;
-  snSyncButton.disabled = !canSyncRange || !connected || filteredBlocks.length === 0;
+  snSyncButton.disabled = !canSyncRange || !connected;
+}
+
+function updateSyncRangePreview() {
+  if (!snSyncRangePreview) {
+    return;
+  }
+  if (!snConfig.enabled) {
+    snSyncRangePreview.textContent = "Enable ServiceNow to sync.";
+    return;
+  }
+  const bounds = getServiceNowSyncRangeBounds({ silent: true });
+  if (!bounds) {
+    snSyncRangePreview.textContent = "Select a valid sync range.";
+    return;
+  }
+  const syncBlocks = getBlocksInBounds(allBlocks, bounds);
+  const count = syncBlocks.length;
+  snSyncRangePreview.textContent = `${count} block${count === 1 ? "" : "s"} will be synced`;
 }
 
 function setSnConnectionState(nextState) {
@@ -323,6 +429,7 @@ function loadServiceNowConfig() {
       snInstanceUrlInput.value = snConfig.instanceUrl || "";
       setSnConnectionState({ connected: false, code: "", message: "" });
       updateServiceNowUiVisibility();
+      updateSyncRangePreview();
     }
   });
 }
@@ -463,10 +570,31 @@ function formatDateTime(ms) {
   return new Date(ms).toLocaleString();
 }
 
-function toDatetimeLocalValue(ms) {
+function toLocalDateValue(ms) {
+  return formatDateOnly(ms);
+}
+
+function toLocalTimeValue(ms) {
   const date = new Date(ms);
-  const tzOffsetMs = date.getTimezoneOffset() * 60 * 1000;
-  return new Date(date.getTime() - tzOffsetMs).toISOString().slice(0, 16);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function setDateTimeInputsFromMs(ms, dateInput, timeInput) {
+  dateInput.value = toLocalDateValue(ms);
+  timeInput.value = toLocalTimeValue(ms);
+}
+
+function parseDateTimeFromInputs(dateInput, timeInput) {
+  const dateValue = String(dateInput.value || "").trim();
+  const timeValue = String(timeInput.value || "").trim();
+  if (!dateValue || !timeValue) {
+    return Number.NaN;
+  }
+  return Date.parse(`${dateValue}T${timeValue}`);
+}
+
+function setNowForInputs(dateInput, timeInput) {
+  setDateTimeInputsFromMs(Date.now(), dateInput, timeInput);
 }
 
 function formatDateOnly(ms) {
@@ -536,6 +664,62 @@ function getRangeBounds() {
   return { startMs: null, endMs: null };
 }
 
+function getServiceNowSyncRangeBounds(options = {}) {
+  const now = Date.now();
+  const preset = snSyncRangePresetSelect.value;
+  const silent = Boolean(options.silent);
+
+  if (preset === "today") {
+    return { startMs: startOfToday(), endMs: now };
+  }
+  if (preset === "this-week") {
+    return { startMs: startOfWeek(), endMs: now };
+  }
+  if (preset === "this-month") {
+    return { startMs: startOfMonth(), endMs: now };
+  }
+  if (preset === "custom") {
+    const startDateValue = snSyncCustomStartDateInput.value;
+    const endDateValue = snSyncCustomEndDateInput.value;
+    const startMs = startDateValue ? new Date(startDateValue).getTime() : null;
+    const endMs = endDateValue
+      ? new Date(endDateValue).getTime() + 24 * 60 * 60 * 1000 - 1
+      : null;
+
+    if (startMs === null || endMs === null || Number.isNaN(startMs) || Number.isNaN(endMs)) {
+      if (!silent) {
+        setSnStatus("Please select both start and end dates for custom sync range.");
+      }
+      return null;
+    }
+    if (endMs < startMs) {
+      if (!silent) {
+        setSnStatus("Custom sync range end date must be after start date.");
+      }
+      return null;
+    }
+
+    return { startMs, endMs };
+  }
+
+  return { startMs: null, endMs: null };
+}
+
+function getBlocksInBounds(blocks, bounds) {
+  if (!bounds) {
+    return [];
+  }
+  return blocks.filter((block) => {
+    if (bounds.startMs !== null && block.startMs < bounds.startMs) {
+      return false;
+    }
+    if (bounds.endMs !== null && block.startMs > bounds.endMs) {
+      return false;
+    }
+    return true;
+  });
+}
+
 function applyFiltersAndRender() {
   dashboardStatus.textContent = "";
 
@@ -554,11 +738,61 @@ function applyFiltersAndRender() {
     return true;
   });
 
+  currentTaskPage = 1;
+  currentBlockPage = 1;
   renderAllSections();
   updateServiceNowActionStates();
-  if (snConfig.enabled) {
-    snSyncButton.style.display = rangePresetSelect.value === "all" ? "none" : "inline-block";
+  updateSyncRangePreview();
+}
+
+function setTaskPage(page) {
+  const totalRows = aggregateBlocksByTask(filteredBlocks).length;
+  const maxPage = Math.max(1, Math.ceil(totalRows / TASK_PAGE_SIZE));
+  const nextPage = Math.min(Math.max(1, Number(page) || 1), maxPage);
+  if (nextPage === currentTaskPage) {
+    return;
   }
+  currentTaskPage = nextPage;
+  renderTaskTable();
+}
+
+function updateTaskPaginationControls(totalRows) {
+  const maxPage = Math.max(1, Math.ceil(totalRows / TASK_PAGE_SIZE));
+  if (currentTaskPage > maxPage) {
+    currentTaskPage = maxPage;
+  }
+
+  taskPagePrevButton.disabled = currentTaskPage <= 1 || totalRows === 0;
+  taskPageNextButton.disabled = currentTaskPage >= maxPage || totalRows === 0;
+  taskPageInfo.textContent =
+    totalRows === 0
+      ? "Page 0 of 0"
+      : `Page ${currentTaskPage} of ${maxPage}`;
+}
+
+function setBlockPage(page) {
+  const totalRows = filteredBlocks.length;
+  const maxPage = Math.max(1, Math.ceil(totalRows / BLOCK_PAGE_SIZE));
+  const nextPage = Math.min(Math.max(1, Number(page) || 1), maxPage);
+  if (nextPage === currentBlockPage) {
+    return;
+  }
+  currentBlockPage = nextPage;
+  renderBlockTable();
+}
+
+function updateBlockPaginationControls(totalRows) {
+  const maxPage = Math.max(1, Math.ceil(totalRows / BLOCK_PAGE_SIZE));
+  if (currentBlockPage > maxPage) {
+    currentBlockPage = maxPage;
+  }
+
+  blockPagePrevButton.disabled = currentBlockPage <= 1 || totalRows === 0;
+  blockPageNextButton.disabled = currentBlockPage >= maxPage || totalRows === 0;
+  blockPageInfo.textContent =
+    totalRows === 0
+      ? "Page 0 of 0"
+      : `Page ${currentBlockPage} of ${maxPage}`;
 }
 
 function syncVisibleRangeToServiceNow() {
@@ -570,12 +804,13 @@ function syncVisibleRangeToServiceNow() {
     setSnStatus("Connect ServiceNow before syncing.");
     return;
   }
-  if (rangePresetSelect.value === "all") {
-    setSnStatus("Select a specific date range before syncing.");
+  const syncBounds = getServiceNowSyncRangeBounds();
+  if (!syncBounds) {
     return;
   }
 
-  const blockIds = filteredBlocks.map((block) => block.id).filter(Boolean);
+  const syncBlocks = getBlocksInBounds(allBlocks, syncBounds);
+  const blockIds = syncBlocks.map((block) => block.id).filter(Boolean);
   if (blockIds.length === 0) {
     setSnStatus("No time blocks in the selected range to sync.");
     setSnSyncReport("");
@@ -588,7 +823,7 @@ function syncVisibleRangeToServiceNow() {
     {
       action: "servicenow/syncVisibleBlocks",
       data: {
-        rangePreset: rangePresetSelect.value,
+        rangePreset: snSyncRangePresetSelect.value,
         blockIds,
       },
     },
@@ -712,25 +947,26 @@ function renderTaskTable() {
   const tableBody = document.querySelector("#task-log-table tbody");
 
   const taskRows = aggregateBlocksByTask(filteredBlocks);
+  updateTaskPaginationControls(taskRows.length);
 
   if (taskRows.length === 0) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 5;
+    cell.colSpan = 3;
     cell.textContent = "No task data for selected range.";
     row.appendChild(cell);
     tableBody.appendChild(row);
     return taskRows;
   }
 
-  taskRows.forEach((taskRow, index) => {
+  const startIndex = (currentTaskPage - 1) * TASK_PAGE_SIZE;
+  const pagedRows = taskRows.slice(startIndex, startIndex + TASK_PAGE_SIZE);
+  pagedRows.forEach((taskRow, index) => {
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td>${index + 1}</td>
+      <td>${startIndex + index + 1}</td>
       <td>${taskRow.task}</td>
       <td>${transformMilisecondsToTime(taskRow.duration)}</td>
-      <td>${taskRow.blockCount}</td>
-      <td>${taskRow.lastSavedMs ? formatDateTime(taskRow.lastSavedMs) : "-"}</td>
     `;
     tableBody.appendChild(row);
   });
@@ -771,6 +1007,7 @@ function renderBlockTable() {
   const tableBody = document.querySelector("#block-log-table tbody");
 
   const rows = [...filteredBlocks].sort((a, b) => b.startMs - a.startMs);
+  updateBlockPaginationControls(rows.length);
   if (rows.length === 0) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
@@ -781,7 +1018,9 @@ function renderBlockTable() {
     return;
   }
 
-  rows.forEach((block, index) => {
+  const startIndex = (currentBlockPage - 1) * BLOCK_PAGE_SIZE;
+  const pagedRows = rows.slice(startIndex, startIndex + BLOCK_PAGE_SIZE);
+  pagedRows.forEach((block, index) => {
     const assignmentLabel =
       block.snSelectionType === "task"
         ? `task ${block.snTaskNumber || block.snTaskSysId || "-"}`
@@ -793,7 +1032,7 @@ function renderBlockTable() {
     const codeLabel = block.snCodeValue ? `code ${block.snCodeValue}` : "no code";
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td>${index + 1}</td>
+      <td>${startIndex + index + 1}</td>
       <td>${block.task}</td>
       <td>${formatDateTime(block.startMs)}</td>
       <td>${formatDateTime(block.endMs)}</td>
@@ -828,6 +1067,18 @@ function rebuildDashboard() {
   });
 }
 
+function toggleTimeBlocksVisibility() {
+  areBlocksExpanded = !areBlocksExpanded;
+  timeBlocksContent.style.display = areBlocksExpanded ? "block" : "none";
+  toggleBlocksButton.classList.toggle("expanded", areBlocksExpanded);
+  toggleBlocksButton.setAttribute("aria-expanded", areBlocksExpanded ? "true" : "false");
+  if (toggleBlocksHint) {
+    toggleBlocksHint.textContent = areBlocksExpanded
+      ? "Expanded, click to collapse"
+      : "Collapsed, click to expand";
+  }
+}
+
 function setManualError(message) {
   manualLogError.textContent = message;
 }
@@ -838,16 +1089,115 @@ function clearManualMessages() {
 
 function clearManualInputBorders() {
   taskNameInput.classList.remove("input-error");
-  taskStartDatetimeInput.classList.remove("input-error");
-  taskEndDatetimeInput.classList.remove("input-error");
+  taskStartDateInput.classList.remove("input-error");
+  taskStartTimeInput.classList.remove("input-error");
+  taskEndDateInput.classList.remove("input-error");
+  taskEndTimeInput.classList.remove("input-error");
+  taskDurationTimeInput.classList.remove("input-error");
   snCodeSelect.classList.remove("input-error");
   snCommentInput.classList.remove("input-error");
 }
 
+function normalizeDurationValue(rawValue) {
+  const value = String(rawValue || "").trim();
+  const match = /^(\d{1,3}):([0-5]\d)$/.exec(value);
+  if (!match) {
+    return "00:00";
+  }
+  const hours = Math.min(999, Number.parseInt(match[1], 10));
+  const minutes = Number.parseInt(match[2], 10);
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function getDurationMinutes() {
+  const normalized = normalizeDurationValue(taskDurationTimeInput.value);
+  const [hoursPart, minutesPart] = normalized.split(":");
+  return Number.parseInt(hoursPart, 10) * 60 + Number.parseInt(minutesPart, 10);
+}
+
+function setDurationFromMs(durationMs) {
+  const safeMs = Number.isFinite(durationMs) && durationMs > 0 ? durationMs : 0;
+  const totalMinutes = Math.floor(safeMs / 60000);
+  const hours = Math.min(999, Math.floor(totalMinutes / 60));
+  const minutes = totalMinutes % 60;
+  taskDurationTimeInput.value = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function setDurationFromStartEndIfValid() {
+  const startMs = parseDateTimeFromInputs(taskStartDateInput, taskStartTimeInput);
+  const endMs = parseDateTimeFromInputs(taskEndDateInput, taskEndTimeInput);
+  if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs <= startMs) {
+    return;
+  }
+  suppressTimeFieldSync = true;
+  setDurationFromMs(endMs - startMs);
+  suppressTimeFieldSync = false;
+}
+
+function setEndFromStartDurationIfValid() {
+  const startMs = parseDateTimeFromInputs(taskStartDateInput, taskStartTimeInput);
+  if (Number.isNaN(startMs)) {
+    return;
+  }
+
+  taskDurationTimeInput.value = normalizeDurationValue(taskDurationTimeInput.value);
+  const durationMinutes = getDurationMinutes();
+  if (durationMinutes <= 0) {
+    return;
+  }
+
+  const computedEndMs = startMs + durationMinutes * 60000;
+  suppressTimeFieldSync = true;
+  setDateTimeInputsFromMs(computedEndMs, taskEndDateInput, taskEndTimeInput);
+  suppressTimeFieldSync = false;
+}
+
+function onStartDateTimeChanged() {
+  if (suppressTimeFieldSync) {
+    return;
+  }
+  clearManualInputBorders();
+  taskDurationTimeInput.value = normalizeDurationValue(taskDurationTimeInput.value);
+  if (getDurationMinutes() > 0) {
+    setEndFromStartDurationIfValid();
+    return;
+  }
+  setDurationFromStartEndIfValid();
+}
+
+function onEndDateTimeChanged() {
+  if (suppressTimeFieldSync) {
+    return;
+  }
+  clearManualInputBorders();
+  setDurationFromStartEndIfValid();
+}
+
+function onDurationChanged() {
+  if (suppressTimeFieldSync) {
+    return;
+  }
+  clearManualInputBorders();
+  setEndFromStartDurationIfValid();
+}
+
+function onStartNowClicked() {
+  setNowForInputs(taskStartDateInput, taskStartTimeInput);
+  onStartDateTimeChanged();
+}
+
+function onEndNowClicked() {
+  setNowForInputs(taskEndDateInput, taskEndTimeInput);
+  onEndDateTimeChanged();
+}
+
 function resetManualForm() {
   taskNameInput.value = "";
-  taskStartDatetimeInput.value = "";
-  taskEndDatetimeInput.value = "";
+  taskStartDateInput.value = "";
+  taskStartTimeInput.value = "";
+  taskEndDateInput.value = "";
+  taskEndTimeInput.value = "";
+  taskDurationTimeInput.value = "00:00";
   snCommentInput.value = "";
   renderAssignmentOptions();
   renderCodeOptions();
@@ -887,8 +1237,9 @@ function openEditBlockModal(blockId) {
   addLogModalTitle.textContent = "Edit time block";
   saveLogButton.textContent = "Save Changes";
   taskNameInput.value = getAssignmentLabelForBlock(block);
-  taskStartDatetimeInput.value = toDatetimeLocalValue(block.startMs);
-  taskEndDatetimeInput.value = toDatetimeLocalValue(block.endMs);
+  setDateTimeInputsFromMs(block.startMs, taskStartDateInput, taskStartTimeInput);
+  setDateTimeInputsFromMs(block.endMs, taskEndDateInput, taskEndTimeInput);
+  setDurationFromMs(block.durationMs);
   renderAssignmentOptions(taskNameInput.value);
   renderCodeOptions(block.snCodeSysId || "");
   snCommentInput.value = block.snCommentText || "";
@@ -920,29 +1271,43 @@ saveLogButton.addEventListener("click", () => {
   clearManualInputBorders();
 
   let taskName = taskNameInput.value.trim();
-  const taskStartValue = taskStartDatetimeInput.value;
-  const taskEndValue = taskEndDatetimeInput.value;
-  const taskStartMs = Date.parse(taskStartValue);
-  const taskEndMs = Date.parse(taskEndValue);
+  const taskStartMs = parseDateTimeFromInputs(taskStartDateInput, taskStartTimeInput);
+  let taskEndMs = parseDateTimeFromInputs(taskEndDateInput, taskEndTimeInput);
+  const hasEndDate = Boolean(String(taskEndDateInput.value || "").trim());
+  const hasEndTime = Boolean(String(taskEndTimeInput.value || "").trim());
+
+  if ((!hasEndDate || !hasEndTime || Number.isNaN(taskEndMs)) && !Number.isNaN(taskStartMs)) {
+    taskDurationTimeInput.value = normalizeDurationValue(taskDurationTimeInput.value);
+    const durationMinutes = getDurationMinutes();
+    if (durationMinutes > 0) {
+      taskEndMs = taskStartMs + durationMinutes * 60000;
+      setDateTimeInputsFromMs(taskEndMs, taskEndDateInput, taskEndTimeInput);
+    }
+  }
 
   if (!taskName) {
     taskNameInput.classList.add("input-error");
     setManualError("Please enter a task before saving.");
     return;
   }
-  if (!taskStartValue || Number.isNaN(taskStartMs)) {
-    taskStartDatetimeInput.classList.add("input-error");
+  if (Number.isNaN(taskStartMs)) {
+    taskStartDateInput.classList.add("input-error");
+    taskStartTimeInput.classList.add("input-error");
     setManualError("Start time is required.");
     return;
   }
-  if (!taskEndValue || Number.isNaN(taskEndMs)) {
-    taskEndDatetimeInput.classList.add("input-error");
+  if (Number.isNaN(taskEndMs)) {
+    taskEndDateInput.classList.add("input-error");
+    taskEndTimeInput.classList.add("input-error");
+    taskDurationTimeInput.classList.add("input-error");
     setManualError("End time is required.");
     return;
   }
   if (taskEndMs <= taskStartMs) {
-    taskStartDatetimeInput.classList.add("input-error");
-    taskEndDatetimeInput.classList.add("input-error");
+    taskStartDateInput.classList.add("input-error");
+    taskStartTimeInput.classList.add("input-error");
+    taskEndDateInput.classList.add("input-error");
+    taskEndTimeInput.classList.add("input-error");
     setManualError("End time must be after start time.");
     return;
   }

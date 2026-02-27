@@ -1,6 +1,7 @@
 (() => {
   const REQUEST_CHANNEL = "tm_sn_bridge_request";
   const RESPONSE_CHANNEL = "tm_sn_bridge_response";
+  const BRIDGE_STATE_KEY = "__tmSnPageBridgeState";
 
   function postResponse(payload) {
     window.postMessage({ channel: RESPONSE_CHANNEL, ...payload }, "*");
@@ -578,7 +579,12 @@
     return { results };
   }
 
-  window.addEventListener("message", async (event) => {
+  const previousState = window[BRIDGE_STATE_KEY];
+  if (previousState?.onMessage && typeof previousState.onMessage === "function") {
+    window.removeEventListener("message", previousState.onMessage);
+  }
+
+  const onBridgeMessage = async (event) => {
     if (event.source !== window) {
       return;
     }
@@ -616,5 +622,11 @@
         data: error?.data || {},
       });
     }
-  });
+  };
+
+  window.addEventListener("message", onBridgeMessage);
+  window[BRIDGE_STATE_KEY] = {
+    onMessage: onBridgeMessage,
+    installedAt: Date.now(),
+  };
 })();

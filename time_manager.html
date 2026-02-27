@@ -10,7 +10,13 @@
     <p id="log-display" class="dashboard-status"></p>
   </div>
 
+  <div class="tab-bar">
+    <button id="dashboard-tab-button" class="tab-button active" type="button">Dashboard</button>
+    <button id="servicenow-tab-button" class="tab-button" type="button">ServiceNow Sync</button>
+  </div>
+
   <div class="dashboard-panel">
+    <div id="dashboard-tab-content" class="tab-content active">
     <div class="dashboard-controls">
       <div class="control-group">
         <label for="range-preset">Range:</label>
@@ -37,25 +43,6 @@
         </select>
       </div>
     </div>
-
-    <section class="dashboard-section servicenow-panel">
-      <h3>ServiceNow</h3>
-      <div class="servicenow-controls">
-        <label class="checkbox-inline" for="sn-enabled">
-          <input type="checkbox" id="sn-enabled" />
-          Enable ServiceNow integration
-        </label>
-        <span id="sn-connection-badge" class="sn-connection-badge disconnected">Disconnected</span>
-        <label for="sn-instance-url">Instance URL:</label>
-        <input type="url" id="sn-instance-url" placeholder="https://your-instance.service-now.com" />
-        <button id="sn-save-config-button">Save</button>
-        <button id="sn-connect-button">Connect ServiceNow</button>
-        <button id="sn-refresh-lookups-button">Refresh ServiceNow Data</button>
-        <button id="sn-sync-button">Sync to ServiceNow</button>
-      </div>
-      <p id="sn-status" class="dashboard-status"></p>
-      <p id="sn-sync-report" class="dashboard-status"></p>
-    </section>
 
     <div class="kpi-grid">
       <div class="kpi-card">
@@ -85,12 +72,15 @@
               <th>#</th>
               <th>Task Name</th>
               <th>Total Duration</th>
-              <th>Blocks</th>
-              <th>Last Saved</th>
             </tr>
           </thead>
           <tbody></tbody>
         </table>
+        <div class="button-row" id="task-pagination-controls">
+          <button id="task-page-prev">Previous</button>
+          <span id="task-page-info">Page 1 of 1</span>
+          <button id="task-page-next">Next</button>
+        </div>
       </section>
 
       <section class="dashboard-section">
@@ -109,26 +99,83 @@
     </div>
 
     <section class="dashboard-section">
-      <h3>Time Blocks</h3>
-      <table id="block-log-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Task Name</th>
-            <th>Start</th>
-            <th>End</th>
-            <th>Duration</th>
-            <th>Source</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+      <button
+        id="toggle-blocks-button"
+        class="accordion-header"
+        type="button"
+        aria-expanded="false"
+        aria-controls="time-blocks-content"
+      >
+        <span class="accordion-title">Time Blocks</span>
+        <span id="toggle-blocks-hint" class="accordion-hint">Collapsed, click to expand</span>
+        <span class="accordion-icon" aria-hidden="true">v</span>
+      </button>
+      <div id="time-blocks-content" class="collapsible-content" style="display: none">
+        <table id="block-log-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Task Name</th>
+              <th>Start</th>
+              <th>End</th>
+              <th>Duration</th>
+              <th>Source</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="button-row" id="block-pagination-controls">
+          <button id="block-page-prev">Previous</button>
+          <span id="block-page-info">Page 1 of 1</span>
+          <button id="block-page-next">Next</button>
+        </div>
+      </div>
     </section>
-  </div>
+    <div class="button-row">
+      <button id="add-log-button">Add Time Block</button>
+    </div>
+    </div>
 
-  <div class="button-row">
-    <button id="add-log-button">Add Time Block</button>
+    <div id="servicenow-tab-content" class="tab-content">
+      <section class="dashboard-section servicenow-panel">
+        <h3>ServiceNow Sync</h3>
+        <div class="dashboard-controls">
+          <div class="control-group">
+            <label for="sn-sync-range-preset">Sync Range:</label>
+            <select id="sn-sync-range-preset">
+              <option value="today">Today</option>
+              <option value="this-week" selected>This Week</option>
+              <option value="this-month">This Month</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div id="sn-sync-custom-range-controls" class="control-group" style="display: none">
+            <label for="sn-sync-custom-start-date">From:</label>
+            <input type="date" id="sn-sync-custom-start-date" />
+            <label for="sn-sync-custom-end-date">To:</label>
+            <input type="date" id="sn-sync-custom-end-date" />
+            <button id="sn-apply-sync-custom-range-button">Apply</button>
+          </div>
+          <span id="sn-sync-range-preview" class="sync-preview-text"></span>
+        </div>
+        <div class="servicenow-controls">
+          <label class="checkbox-inline" for="sn-enabled">
+            <input type="checkbox" id="sn-enabled" />
+            Enable ServiceNow integration
+          </label>
+          <span id="sn-connection-badge" class="sn-connection-badge disconnected">Disconnected</span>
+          <label for="sn-instance-url">Instance URL:</label>
+          <input type="url" id="sn-instance-url" placeholder="https://your-instance.service-now.com" />
+          <button id="sn-save-config-button">Save</button>
+          <button id="sn-connect-button">Connect ServiceNow</button>
+          <button id="sn-refresh-lookups-button">Refresh ServiceNow Data</button>
+          <button id="sn-sync-button">Sync to ServiceNow</button>
+        </div>
+        <p id="sn-status" class="dashboard-status"></p>
+        <p id="sn-sync-report" class="dashboard-status"></p>
+      </section>
+    </div>
   </div>
 
   <div id="add-log-modal" class="modal">
@@ -159,12 +206,24 @@
           />
         </div>
         <div class="task-time">
-          <label for="task-start-datetime">Start Time:</label>
-          <input type="datetime-local" id="task-start-datetime" />
+          <label for="task-start-date">Start Time:</label>
+          <div class="inline-date-time">
+            <input type="date" id="task-start-date" />
+            <input type="time" id="task-start-time" step="60" />
+            <button type="button" id="task-start-now-button">Now</button>
+          </div>
         </div>
         <div class="task-time">
-          <label for="task-end-datetime">End Time:</label>
-          <input type="datetime-local" id="task-end-datetime" />
+          <label for="task-duration-time">Duration (HH:MM):</label>
+          <input type="time" id="task-duration-time" step="60" value="00:00" />
+        </div>
+        <div class="task-time">
+          <label for="task-end-date">End Time:</label>
+          <div class="inline-date-time">
+            <input type="date" id="task-end-date" />
+            <input type="time" id="task-end-time" step="60" />
+            <button type="button" id="task-end-now-button">Now</button>
+          </div>
         </div>
       </div>
       <div class="button-row">
@@ -176,3 +235,4 @@
   <script src="time_manager.js"></script>
 </body>
 </html>
+

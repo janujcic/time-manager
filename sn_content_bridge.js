@@ -2,21 +2,31 @@
   const REQUEST_CHANNEL = "tm_sn_bridge_request";
   const RESPONSE_CHANNEL = "tm_sn_bridge_response";
   const PAGE_BRIDGE_ID = "tm-sn-page-bridge";
+  const BRIDGE_VERSION = String(chrome.runtime.getManifest()?.version || "dev");
   const pending = new Map();
 
-  function injectPageBridge() {
-    if (document.getElementById(PAGE_BRIDGE_ID)) {
-      return;
-    }
-
+  function injectPageBridge(forceRefresh = false) {
     const root = document.head || document.documentElement;
     if (!root) {
       return;
     }
 
+    const existing = document.getElementById(PAGE_BRIDGE_ID);
+    if (
+      existing &&
+      !forceRefresh &&
+      existing.dataset.bridgeVersion === BRIDGE_VERSION
+    ) {
+      return;
+    }
+    if (existing) {
+      existing.remove();
+    }
+
     const script = document.createElement("script");
     script.id = PAGE_BRIDGE_ID;
-    script.src = chrome.runtime.getURL("sn_page_bridge.js");
+    script.dataset.bridgeVersion = BRIDGE_VERSION;
+    script.src = `${chrome.runtime.getURL("sn_page_bridge.js")}?v=${encodeURIComponent(BRIDGE_VERSION)}`;
     script.async = false;
     root.appendChild(script);
   }
@@ -75,7 +85,7 @@
       return false;
     }
 
-    injectPageBridge();
+    injectPageBridge(true);
 
     const timeoutMs = Math.max(1000, Number(envelope.timeoutMs) || 15000);
     const timeoutId = window.setTimeout(() => {
