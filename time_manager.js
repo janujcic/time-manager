@@ -3,10 +3,9 @@ const addLogModalTitle = document.getElementById("add-log-modal-title");
 const saveLogButton = document.getElementById("save-log-button");
 const manualLogError = document.getElementById("manual-log-error");
 const taskNameInput = document.getElementById("task-name");
+const snAssignmentList = document.getElementById("sn-assignment-list");
 const taskStartDatetimeInput = document.getElementById("task-start-datetime");
 const taskEndDatetimeInput = document.getElementById("task-end-datetime");
-const snAssignmentWrap = document.getElementById("sn-assignment-wrap");
-const snAssignmentSelect = document.getElementById("sn-assignment-select");
 const snCodeWrap = document.getElementById("sn-code-wrap");
 const snCodeSelect = document.getElementById("sn-code-select");
 const snCommentWrap = document.getElementById("sn-comment-wrap");
@@ -71,7 +70,6 @@ function bindDashboardEvents() {
   snRefreshLookupsButton.addEventListener("click", fetchServiceNowLookups);
   snSyncButton.addEventListener("click", syncVisibleRangeToServiceNow);
   taskNameInput.addEventListener("input", onTaskNameInputChanged);
-  snAssignmentSelect.addEventListener("change", clearManualInputBorders);
   snCodeSelect.addEventListener("change", clearManualInputBorders);
   snCommentInput.addEventListener("input", clearManualInputBorders);
 }
@@ -86,7 +84,6 @@ function setSnSyncReport(message) {
 
 function updateServiceNowUiVisibility() {
   const visible = Boolean(snConfig.enabled);
-  snAssignmentWrap.style.display = visible ? "flex" : "none";
   snCodeWrap.style.display = visible ? "flex" : "none";
   snCommentWrap.style.display = visible ? "flex" : "none";
   snSyncButton.style.display = visible && rangePresetSelect.value !== "all" ? "inline-block" : "none";
@@ -204,31 +201,24 @@ function getAssignmentOptions(filterText = "") {
   return [...taskOptions, ...categoryOptions];
 }
 
-function renderAssignmentOptions(selectedValue = "") {
+function renderAssignmentOptions(selectedLabel = "") {
   const options = getAssignmentOptions(taskNameInput.value);
-  if (selectedValue && !options.some((item) => item.value === selectedValue)) {
-    const fallback = getAssignmentOptions("").find((item) => item.value === selectedValue);
+  if (selectedLabel && !options.some((item) => item.label === selectedLabel)) {
+    const fallback = getAssignmentOptions("").find((item) => item.label === selectedLabel);
     if (fallback) {
       options.unshift(fallback);
     }
   }
-  snAssignmentSelect.innerHTML = "";
-
-  const placeholder = document.createElement("option");
-  placeholder.value = "";
-  placeholder.textContent =
-    options.length === 0 ? "No matching task/category suggestions" : "Select task or category";
-  snAssignmentSelect.appendChild(placeholder);
+  snAssignmentList.innerHTML = "";
 
   options.forEach((optionData) => {
     const option = document.createElement("option");
-    option.value = optionData.value;
-    option.textContent = optionData.label;
-    snAssignmentSelect.appendChild(option);
+    option.value = optionData.label;
+    snAssignmentList.appendChild(option);
   });
 
-  if (selectedValue && options.some((item) => item.value === selectedValue)) {
-    snAssignmentSelect.value = selectedValue;
+  if (selectedLabel) {
+    taskNameInput.value = selectedLabel;
   }
 }
 
@@ -269,16 +259,40 @@ function refreshServiceNowLookupsFromCache() {
 }
 
 function onTaskNameInputChanged() {
-  renderAssignmentOptions(snAssignmentSelect.value);
+  clearManualInputBorders();
+  renderAssignmentOptions();
 }
 
 function getSelectedAssignment() {
-  const selectedValue = snAssignmentSelect.value;
-  if (!selectedValue) {
+  const typedValue = String(taskNameInput.value || "").trim();
+  if (!typedValue) {
     return null;
   }
-  const options = getAssignmentOptions(taskNameInput.value);
-  return options.find((item) => item.value === selectedValue) || null;
+  return getAssignmentOptions("").find((item) => item.label === typedValue) || null;
+}
+
+function getAssignmentLabelForBlock(block) {
+  if (!block) {
+    return "";
+  }
+
+  if (block.snSelectionType === "task" && block.snTaskSysId) {
+    const match = getAssignmentOptions("").find((item) => item.value === `task:${block.snTaskSysId}`);
+    if (match?.label) {
+      return match.label;
+    }
+  }
+
+  if (block.snSelectionType === "category" && block.snCategorySysId) {
+    const match = getAssignmentOptions("").find(
+      (item) => item.value === `category:${block.snCategorySysId}`
+    );
+    if (match?.label) {
+      return match.label;
+    }
+  }
+
+  return block.task || "";
 }
 
 function getSelectedCode() {
@@ -815,7 +829,6 @@ function clearManualInputBorders() {
   taskNameInput.classList.remove("input-error");
   taskStartDatetimeInput.classList.remove("input-error");
   taskEndDatetimeInput.classList.remove("input-error");
-  snAssignmentSelect.classList.remove("input-error");
   snCodeSelect.classList.remove("input-error");
   snCommentInput.classList.remove("input-error");
 }
@@ -862,16 +875,10 @@ function openEditBlockModal(blockId) {
   editingBlockId = block.id;
   addLogModalTitle.textContent = "Edit time block";
   saveLogButton.textContent = "Save Changes";
-  taskNameInput.value = block.task;
+  taskNameInput.value = getAssignmentLabelForBlock(block);
   taskStartDatetimeInput.value = toDatetimeLocalValue(block.startMs);
   taskEndDatetimeInput.value = toDatetimeLocalValue(block.endMs);
-  const assignmentValue =
-    block.snSelectionType === "task" && block.snTaskSysId
-      ? `task:${block.snTaskSysId}`
-      : block.snSelectionType === "category" && block.snCategorySysId
-        ? `category:${block.snCategorySysId}`
-        : "";
-  renderAssignmentOptions(assignmentValue);
+  renderAssignmentOptions(taskNameInput.value);
   renderCodeOptions(block.snCodeSysId || "");
   snCommentInput.value = block.snCommentText || "";
   clearManualMessages();
@@ -901,7 +908,7 @@ saveLogButton.addEventListener("click", () => {
   clearManualMessages();
   clearManualInputBorders();
 
-  const taskName = taskNameInput.value.trim();
+  let taskName = taskNameInput.value.trim();
   const taskStartValue = taskStartDatetimeInput.value;
   const taskEndValue = taskEndDatetimeInput.value;
   const taskStartMs = Date.parse(taskStartValue);
@@ -909,7 +916,7 @@ saveLogButton.addEventListener("click", () => {
 
   if (!taskName) {
     taskNameInput.classList.add("input-error");
-    setManualError("Task name is required.");
+    setManualError("Please enter a task before saving.");
     return;
   }
   if (!taskStartValue || Number.isNaN(taskStartMs)) {
@@ -943,8 +950,8 @@ saveLogButton.addEventListener("click", () => {
     const snCommentText = snCommentInput.value.trim();
 
     if (!selectedAssignment) {
-      snAssignmentSelect.classList.add("input-error");
-      setManualError("Please select an assigned task or category.");
+      taskNameInput.classList.add("input-error");
+      setManualError("Please select an assigned task or category suggestion.");
       return;
     }
 
@@ -961,6 +968,9 @@ saveLogButton.addEventListener("click", () => {
       payload.snTaskShortDescription = selectedAssignment.data.short_description || "";
       payload.snCategoryValue = "task_work";
       payload.snCategoryLabel = "Task Work";
+      taskName = `${selectedAssignment.data.number || ""} - ${
+        selectedAssignment.data.short_description || ""
+      }`.trim();
       const taskWorkCategory = (snLookupCache.categories || []).find(
         (category) => category.value === "task_work"
       );
@@ -970,6 +980,7 @@ saveLogButton.addEventListener("click", () => {
       payload.snCategorySysId = selectedAssignment.data.sys_id || "";
       payload.snCategoryValue = selectedAssignment.data.value || "";
       payload.snCategoryLabel = selectedAssignment.data.label || "";
+      taskName = selectedAssignment.data.label || selectedAssignment.data.value || taskName;
       if (!snCommentText) {
         snCommentInput.classList.add("input-error");
         setManualError("Extra notes are required when category is selected.");
@@ -982,6 +993,8 @@ saveLogButton.addEventListener("click", () => {
     payload.snCodeValue = selectedCode.u_time_card_code || "";
     payload.snCodeDescription = selectedCode.u_description || "";
   }
+
+  payload.taskName = taskName;
 
   const action = editingBlockId ? "updateTimeBlock" : "saveManualSession";
   const request = editingBlockId

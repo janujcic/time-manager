@@ -98,7 +98,7 @@ button {
   width: 100%;
 }
 
-#task_name,
+#task-name,
 #main-sn-assignment-input,
 #main-sn-code-select,
 #main-sn-notes-input {
@@ -414,7 +414,7 @@ table tr:hover {
   align-items: flex-start !important;
 }
 
-#sn-assignment-select,
+#task-name,
 #sn-code-select,
 #sn-comment-input {
   width: 100%;

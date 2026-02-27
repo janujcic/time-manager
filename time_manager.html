@@ -137,11 +137,14 @@
       <p id="manual-log-error" class="field-error" role="alert" aria-live="polite"></p>
       <div class="task-log">
         <div class="task-name">
-          <input type="text" id="task-name" placeholder="Task name" />
-        </div>
-        <div class="task-time servicenow-select-wrap" id="sn-assignment-wrap">
-          <label for="sn-assignment-select">Assigned Task / Category:</label>
-          <select id="sn-assignment-select"></select>
+          <label for="task-name">Task / Assigned Task / Category:</label>
+          <input
+            type="text"
+            id="task-name"
+            list="sn-assignment-list"
+            placeholder="Enter task or search assigned tasks/categories"
+          />
+          <datalist id="sn-assignment-list"></datalist>
         </div>
         <div class="task-time servicenow-select-wrap" id="sn-code-wrap">
           <label for="sn-code-select">Time Code:</label>
