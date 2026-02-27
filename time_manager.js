@@ -223,7 +223,18 @@ function renderAssignmentOptions(selectedLabel = "") {
 }
 
 function renderCodeOptions(selectedCodeSysId = "") {
-  const codes = Array.isArray(snLookupCache.timeCodes) ? snLookupCache.timeCodes : [];
+  const codes = Array.isArray(snLookupCache.timeCodes) ? [...snLookupCache.timeCodes] : [];
+  codes.sort((a, b) => {
+    const codeA = String(a?.u_time_card_code || "").toLowerCase();
+    const codeB = String(b?.u_time_card_code || "").toLowerCase();
+    const codeCompare = codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: "base" });
+    if (codeCompare !== 0) {
+      return codeCompare;
+    }
+    const descA = String(a?.u_description || "").toLowerCase();
+    const descB = String(b?.u_description || "").toLowerCase();
+    return descA.localeCompare(descB, undefined, { numeric: true, sensitivity: "base" });
+  });
   snCodeSelect.innerHTML = "";
 
   const placeholder = document.createElement("option");

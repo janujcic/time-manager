@@ -1,6 +1,7 @@
 const TIME_BLOCKS_KEY = "timeBlocks";
 const SN_CONFIG_KEY = "sn_config";
 const SN_LOOKUP_CACHE_KEY = "sn_lookup_cache";
+const TIMER_RUNTIME_KEY = "timer_runtime";
 const DEPRECATED_STORAGE_KEYS = ["timeSessions", "sn_timecards_cache", "sn_last_sync_report"];
 
 const DEFAULT_SN_CONFIG = {
@@ -9,63 +10,80 @@ const DEFAULT_SN_CONFIG = {
 };
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEKDAY_FIELDS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+const ACTION_DEFAULT_TITLE = "Time Manager";
+const ACTION_RUNNING_BADGE_COLOR = [46, 125, 50, 255];
+const ACTION_PAUSED_BADGE_COLOR = [245, 124, 0, 255];
+const ACTION_UPDATE_THROTTLE_MS = 15000;
+const ACTION_TITLE_TASK_MAX_LENGTH = 60;
 
-let timerData = {
-  savedTaskName: "",
-  isRunning: false,
-  elapsedTime: 0,
-  lastSaved: "",
-  snSelectionType: "",
-  snTaskSysId: "",
-  snTaskNumber: "",
-  snTaskShortDescription: "",
-  snCategorySysId: "",
-  snCategoryValue: "",
-  snCategoryLabel: "",
-  snCodeSysId: "",
-  snCodeValue: "",
-  snCodeDescription: "",
-  snCommentText: "",
-};
+function createDefaultTimerData() {
+  return {
+    savedTaskName: "",
+    isRunning: false,
+    elapsedTime: 0,
+    lastSaved: "",
+    snSelectionType: "",
+    snTaskSysId: "",
+    snTaskNumber: "",
+    snTaskShortDescription: "",
+    snCategorySysId: "",
+    snCategoryValue: "",
+    snCategoryLabel: "",
+    snCodeSysId: "",
+    snCodeValue: "",
+    snCodeDescription: "",
+    snCommentText: "",
+  };
+}
+
+let timerData = createDefaultTimerData();
 let timerInterval = null;
 let activeBlockStartMs = null;
 let elapsedBeforeActiveMs = 0;
 let lastConnectedSnTabId = null;
 let lastConnectedSnUserId = "";
+let lastActionIndicatorUpdateMs = 0;
+let lastActionIndicatorMinute = -1;
 
-initializeStorage();
+const initializationPromise = initializeStorage().catch((error) => {
+  console.error("Storage initialization failed:", error);
+});
 
-function initializeStorage() {
-  chrome.storage.local.get(
-    [TIME_BLOCKS_KEY, SN_CONFIG_KEY, SN_LOOKUP_CACHE_KEY, ...DEPRECATED_STORAGE_KEYS],
-    (result) => {
-      const updatePayload = {};
-      if (!Array.isArray(result[TIME_BLOCKS_KEY])) {
-        updatePayload[TIME_BLOCKS_KEY] = [];
-      }
-      if (!result[SN_CONFIG_KEY] || typeof result[SN_CONFIG_KEY] !== "object") {
-        updatePayload[SN_CONFIG_KEY] = { ...DEFAULT_SN_CONFIG };
-      }
-      if (!result[SN_LOOKUP_CACHE_KEY] || typeof result[SN_LOOKUP_CACHE_KEY] !== "object") {
-        updatePayload[SN_LOOKUP_CACHE_KEY] = {
-          fetchedAtMs: 0,
-          tasks: [],
-          categories: [],
-          timeCodes: [],
-        };
-      }
-      if (Object.keys(updatePayload).length > 0) {
-        chrome.storage.local.set(updatePayload);
-      }
+async function initializeStorage() {
+  const result = await storageGet([
+    TIME_BLOCKS_KEY,
+    SN_CONFIG_KEY,
+    SN_LOOKUP_CACHE_KEY,
+    TIMER_RUNTIME_KEY,
+    ...DEPRECATED_STORAGE_KEYS,
+  ]);
+  const updatePayload = {};
+  if (!Array.isArray(result[TIME_BLOCKS_KEY])) {
+    updatePayload[TIME_BLOCKS_KEY] = [];
+  }
+  if (!result[SN_CONFIG_KEY] || typeof result[SN_CONFIG_KEY] !== "object") {
+    updatePayload[SN_CONFIG_KEY] = { ...DEFAULT_SN_CONFIG };
+  }
+  if (!result[SN_LOOKUP_CACHE_KEY] || typeof result[SN_LOOKUP_CACHE_KEY] !== "object") {
+    updatePayload[SN_LOOKUP_CACHE_KEY] = {
+      fetchedAtMs: 0,
+      tasks: [],
+      categories: [],
+      timeCodes: [],
+    };
+  }
+  if (Object.keys(updatePayload).length > 0) {
+    await storageSet(updatePayload);
+  }
 
-      const keysToRemove = DEPRECATED_STORAGE_KEYS.filter((key) =>
-        Object.prototype.hasOwnProperty.call(result, key)
-      );
-      if (keysToRemove.length > 0) {
-        chrome.storage.local.remove(keysToRemove);
-      }
-    }
+  const keysToRemove = DEPRECATED_STORAGE_KEYS.filter((key) =>
+    Object.prototype.hasOwnProperty.call(result, key)
   );
+  if (keysToRemove.length > 0) {
+    await storageRemove(keysToRemove);
+  }
+
+  await restoreTimerRuntime(result[TIMER_RUNTIME_KEY]);
 }
 
 function storageGet(keys) {
@@ -77,6 +95,12 @@ function storageGet(keys) {
 function storageSet(values) {
   return new Promise((resolve) => {
     chrome.storage.local.set(values, resolve);
+  });
+}
+
+function storageRemove(keys) {
+  return new Promise((resolve) => {
+    chrome.storage.local.remove(keys, resolve);
   });
 }
 
@@ -155,6 +179,94 @@ function normalizeInstanceUrl(rawUrl) {
 
 function readString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function truncateText(text, maxLength) {
+  const value = String(text || "").trim();
+  if (!value) {
+    return "";
+  }
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function getRunningBadgeText(elapsedMs) {
+  const safeElapsed = Math.max(0, Number(elapsedMs) || 0);
+  const minutes = Math.floor(safeElapsed / (60 * 1000));
+  return minutes > 99 ? "99m+" : `${minutes}m`;
+}
+
+function buildActionTitle(stateLabel, taskName, elapsedMs) {
+  const compactTask = truncateText(taskName, ACTION_TITLE_TASK_MAX_LENGTH) || "No active task";
+  const elapsedText = transformMilisecondsToTime(Math.max(0, Number(elapsedMs) || 0));
+  return `${stateLabel}: ${compactTask}\nElapsed: ${elapsedText}`;
+}
+
+function runActionApi(methodName, details) {
+  return new Promise((resolve) => {
+    try {
+      if (!chrome?.action || typeof chrome.action[methodName] !== "function") {
+        resolve();
+        return;
+      }
+      chrome.action[methodName](details, () => {
+        resolve();
+      });
+    } catch (error) {
+      console.warn(`Action API call failed: ${methodName}`, error);
+      resolve();
+    }
+  });
+}
+
+async function clearActionIndicator() {
+  lastActionIndicatorUpdateMs = 0;
+  lastActionIndicatorMinute = -1;
+  await runActionApi("setBadgeText", { text: "" });
+  await runActionApi("setTitle", { title: ACTION_DEFAULT_TITLE });
+}
+
+async function updateActionIndicator(force = false) {
+  const hasTask = Boolean(readString(timerData.savedTaskName));
+  if (!hasTask) {
+    await clearActionIndicator();
+    return;
+  }
+
+  if (timerData.isRunning) {
+    const elapsedMs =
+      elapsedBeforeActiveMs +
+      (activeBlockStartMs !== null ? Math.max(0, Date.now() - activeBlockStartMs) : 0);
+    const elapsedMinute = Math.floor(elapsedMs / (60 * 1000));
+    const now = Date.now();
+    const shouldSkip =
+      !force &&
+      elapsedMinute === lastActionIndicatorMinute &&
+      now - lastActionIndicatorUpdateMs < ACTION_UPDATE_THROTTLE_MS;
+    if (shouldSkip) {
+      return;
+    }
+
+    await runActionApi("setBadgeBackgroundColor", { color: ACTION_RUNNING_BADGE_COLOR });
+    await runActionApi("setBadgeText", { text: getRunningBadgeText(elapsedMs) });
+    await runActionApi("setTitle", {
+      title: buildActionTitle("Running", timerData.savedTaskName, elapsedMs),
+    });
+    lastActionIndicatorUpdateMs = now;
+    lastActionIndicatorMinute = elapsedMinute;
+    return;
+  }
+
+  const pausedElapsed = Math.max(0, Number(timerData.elapsedTime) || 0);
+  await runActionApi("setBadgeBackgroundColor", { color: ACTION_PAUSED_BADGE_COLOR });
+  await runActionApi("setBadgeText", { text: "PAUSE" });
+  await runActionApi("setTitle", {
+    title: buildActionTitle("Paused", timerData.savedTaskName, pausedElapsed),
+  });
+  lastActionIndicatorUpdateMs = Date.now();
+  lastActionIndicatorMinute = Math.floor(pausedElapsed / (60 * 1000));
 }
 
 function normalizeServiceNowMetadata(taskData = {}) {
@@ -267,6 +379,85 @@ function withServiceNowMetadata(base, taskData) {
     ...base,
     ...metadata,
   };
+}
+
+function getPersistableTimerRuntime() {
+  const metadata = normalizeServiceNowMetadata(timerData);
+  return {
+    savedTaskName: timerData.savedTaskName || "",
+    isRunning: Boolean(timerData.isRunning),
+    lastSaved: timerData.lastSaved || "",
+    elapsedBeforeActiveMs: Number(elapsedBeforeActiveMs) || 0,
+    activeBlockStartMs: Number.isFinite(activeBlockStartMs) ? activeBlockStartMs : null,
+    ...metadata,
+  };
+}
+
+async function persistTimerRuntime() {
+  await storageSet({ [TIMER_RUNTIME_KEY]: getPersistableTimerRuntime() });
+}
+
+async function clearTimerRuntime() {
+  await storageSet({ [TIMER_RUNTIME_KEY]: null });
+}
+
+function ensureTimerIntervalRunning() {
+  if (timerInterval !== null) {
+    return;
+  }
+  timerInterval = setInterval(() => {
+    if (!timerData.isRunning || activeBlockStartMs === null) {
+      return;
+    }
+    timerData.elapsedTime = elapsedBeforeActiveMs + (Date.now() - activeBlockStartMs);
+    broadcastTimerUpdate();
+    void updateActionIndicator(false);
+  }, 1000);
+}
+
+async function restoreTimerRuntime(runtime) {
+  if (!runtime || typeof runtime !== "object") {
+    timerData = createDefaultTimerData();
+    activeBlockStartMs = null;
+    elapsedBeforeActiveMs = 0;
+    await clearActionIndicator();
+    return;
+  }
+
+  const restoredTask = readString(runtime.savedTaskName);
+  if (!restoredTask) {
+    timerData = createDefaultTimerData();
+    activeBlockStartMs = null;
+    elapsedBeforeActiveMs = 0;
+    await clearActionIndicator();
+    return;
+  }
+
+  timerData = {
+    ...createDefaultTimerData(),
+    savedTaskName: restoredTask,
+    isRunning: Boolean(runtime.isRunning),
+    lastSaved: readString(runtime.lastSaved),
+    ...normalizeServiceNowMetadata(runtime),
+  };
+
+  await refreshElapsedTimeForTask(restoredTask);
+  const storedElapsed = Number(runtime.elapsedBeforeActiveMs);
+  if (Number.isFinite(storedElapsed) && storedElapsed >= 0) {
+    elapsedBeforeActiveMs = storedElapsed;
+    timerData.elapsedTime = storedElapsed;
+  }
+
+  const storedStart = Number(runtime.activeBlockStartMs);
+  if (timerData.isRunning && Number.isFinite(storedStart) && storedStart > 0) {
+    activeBlockStartMs = storedStart;
+    timerData.elapsedTime = elapsedBeforeActiveMs + (Date.now() - activeBlockStartMs);
+    ensureTimerIntervalRunning();
+  } else {
+    activeBlockStartMs = null;
+    timerData.isRunning = false;
+  }
+  await updateActionIndicator(true);
 }
 
 async function getTimeBlocks() {
@@ -450,14 +641,9 @@ async function startTimer(taskName, taskData = {}) {
 
   activeBlockStartMs = Date.now();
   timerData.isRunning = true;
-
-  timerInterval = setInterval(() => {
-    if (!timerData.isRunning || activeBlockStartMs === null) {
-      return;
-    }
-    timerData.elapsedTime = elapsedBeforeActiveMs + (Date.now() - activeBlockStartMs);
-    broadcastTimerUpdate();
-  }, 1000);
+  await persistTimerRuntime();
+  ensureTimerIntervalRunning();
+  await updateActionIndicator(true);
 
   return { status: "started" };
 }
@@ -474,6 +660,8 @@ async function stopTimer() {
 
   if (activeBlockStartMs === null) {
     timerData.isRunning = false;
+    await persistTimerRuntime();
+    await updateActionIndicator(true);
     return { status: "stopped" };
   }
 
@@ -504,6 +692,8 @@ async function stopTimer() {
   elapsedBeforeActiveMs += newBlock.durationMs;
   timerData.elapsedTime = elapsedBeforeActiveMs;
   timerData.lastSaved = getTimeStringFromMs(endMs);
+  await persistTimerRuntime();
+  await updateActionIndicator(true);
   broadcastTimerUpdate();
 
   return { status: "stopped" };
@@ -515,25 +705,11 @@ async function finishTimer() {
   }
 
   const elapsedTime = timerData.elapsedTime;
-  timerData = {
-    savedTaskName: "",
-    isRunning: false,
-    elapsedTime: 0,
-    lastSaved: "",
-    snSelectionType: "",
-    snTaskSysId: "",
-    snTaskNumber: "",
-    snTaskShortDescription: "",
-    snCategorySysId: "",
-    snCategoryValue: "",
-    snCategoryLabel: "",
-    snCodeSysId: "",
-    snCodeValue: "",
-    snCodeDescription: "",
-    snCommentText: "",
-  };
+  timerData = createDefaultTimerData();
   elapsedBeforeActiveMs = 0;
   activeBlockStartMs = null;
+  await clearTimerRuntime();
+  await clearActionIndicator();
 
   return elapsedTime;
 }
@@ -1074,6 +1250,19 @@ function readDisplayValue(value) {
   return value || "";
 }
 
+function compareTimeCodes(a, b) {
+  const codeA = String(a?.u_time_card_code || "").toLowerCase();
+  const codeB = String(b?.u_time_card_code || "").toLowerCase();
+  const codeCompare = codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: "base" });
+  if (codeCompare !== 0) {
+    return codeCompare;
+  }
+
+  const descA = String(a?.u_description || "").toLowerCase();
+  const descB = String(b?.u_description || "").toLowerCase();
+  return descA.localeCompare(descB, undefined, { numeric: true, sensitivity: "base" });
+}
+
 async function serviceNowCheckSession() {
   return connectServiceNowSession();
 }
@@ -1137,6 +1326,7 @@ async function serviceNowFetchLookups() {
           };
         })
         .filter((item) => item.sys_id && item.u_time_card_code)
+        .sort(compareTimeCodes)
     : [];
 
   const cache = {
@@ -1163,7 +1353,7 @@ async function getCachedLookups() {
     fetchedAtMs: Number(cache.fetchedAtMs) || 0,
     tasks: Array.isArray(cache.tasks) ? cache.tasks : [],
     categories: Array.isArray(cache.categories) ? cache.categories : [],
-    timeCodes: Array.isArray(cache.timeCodes) ? cache.timeCodes : [],
+    timeCodes: Array.isArray(cache.timeCodes) ? [...cache.timeCodes].sort(compareTimeCodes) : [],
   };
 }
 
@@ -1303,6 +1493,7 @@ async function clearSessions() {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   (async () => {
+    await initializationPromise;
     if (request.action === "start") {
       const response = await startTimer(request.taskName, request.taskData || {});
       sendResponse(response);
@@ -1316,6 +1507,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (timerData.isRunning && activeBlockStartMs !== null) {
         timerData.elapsedTime = elapsedBeforeActiveMs + (Date.now() - activeBlockStartMs);
       }
+      await updateActionIndicator(false);
       sendResponse({ timerData });
     } else if (request.action === "saveManualSession") {
       const response = await saveManualSession(request.taskData);

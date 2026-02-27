@@ -6,6 +6,7 @@ const taskNameError = document.getElementById("task-name-error");
 const enterStartTask = document.querySelector(".enter-start-task");
 const runningTask = document.querySelector(".running-task");
 const runningTaskMessage = document.getElementById("running-task-message");
+const runningTaskTitle = document.getElementById("running-task-title");
 const elapsedTimeDisplay = document.getElementById("elapsed-time");
 const startButton = document.getElementById("start-button");
 const resumeButton = document.getElementById("resume-button");
@@ -49,9 +50,21 @@ function transformMilisecondsToTime(miliseconds) {
   return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
 }
 
+function formatTaskTitle(taskName) {
+  const trimmed = String(taskName || "").trim();
+  if (!trimmed) {
+    return "No active task";
+  }
+  if (trimmed.length <= 70) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, 67)}...`;
+}
+
 function updateRunningMessage(isRunning) {
-  const stateText = isRunning ? "running" : "paused";
-  runningTaskMessage.textContent = `Task timer for "${currentTaskName}" is ${stateText}.`;
+  runningTaskTitle.textContent = formatTaskTitle(currentTaskName);
+  runningTaskTitle.title = currentTaskName || "";
+  runningTaskMessage.textContent = isRunning ? "Status: Running" : "Status: Paused";
 }
 
 function showRunningState(isRunning) {
@@ -135,7 +148,18 @@ function renderMainAssignmentOptions(selectedLabel = "") {
 }
 
 function renderMainCodeOptions(selectedCodeSysId = "") {
-  const timeCodes = Array.isArray(snLookupCache.timeCodes) ? snLookupCache.timeCodes : [];
+  const timeCodes = Array.isArray(snLookupCache.timeCodes) ? [...snLookupCache.timeCodes] : [];
+  timeCodes.sort((a, b) => {
+    const codeA = String(a?.u_time_card_code || "").toLowerCase();
+    const codeB = String(b?.u_time_card_code || "").toLowerCase();
+    const codeCompare = codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: "base" });
+    if (codeCompare !== 0) {
+      return codeCompare;
+    }
+    const descA = String(a?.u_description || "").toLowerCase();
+    const descB = String(b?.u_description || "").toLowerCase();
+    return descA.localeCompare(descB, undefined, { numeric: true, sensitivity: "base" });
+  });
 
   mainSnCodeSelect.innerHTML = "";
   const placeholder = document.createElement("option");
