@@ -262,6 +262,12 @@ startButton.addEventListener("click", () => {
     const selectedAssignment = getSelectedAssignment();
     const selectedCode = getSelectedCodeData();
 
+    if (!selectedAssignment) {
+      clearTaskNameError();
+      showMainSnError("Please select an assigned task or category.");
+      return;
+    }
+
     if (!selectedCode) {
       clearTaskNameError();
       showMainSnError("Please select a time code.");
@@ -288,7 +294,6 @@ startButton.addEventListener("click", () => {
       taskData.snCategoryValue = selectedAssignment.data.value || "";
       taskData.snCategoryLabel = selectedAssignment.data.label || "";
       taskName = selectedAssignment.data.label || selectedAssignment.data.value || taskName;
-    } else {
       taskData.snCommentText = taskName;
     }
 

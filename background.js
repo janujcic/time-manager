@@ -232,6 +232,10 @@ async function validateServiceNowMetadata(taskData = {}) {
   }
 
   const metadata = normalizeServiceNowMetadata(taskData);
+  if (metadata.snSelectionType !== "task" && metadata.snSelectionType !== "category") {
+    return { status: "error", message: "Task or category selection is required." };
+  }
+
   if (!metadata.snCodeSysId) {
     return { status: "error", message: "Time code selection is required." };
   }
@@ -247,16 +251,16 @@ async function validateServiceNowMetadata(taskData = {}) {
     if (metadata.snCategoryValue === "task_work") {
       return { status: "error", message: "task_work is reserved for task-linked entries." };
     }
+    if (!metadata.snCommentText) {
+      return { status: "error", message: "Extra notes are required for category entries." };
+    }
   }
 
   return { status: "success" };
 }
 
-function withServiceNowMetadata(base, taskData, fallbackComment = "") {
+function withServiceNowMetadata(base, taskData) {
   const metadata = normalizeServiceNowMetadata(taskData);
-  if (!metadata.snSelectionType && !metadata.snCommentText) {
-    metadata.snCommentText = readString(fallbackComment);
-  }
   return {
     ...base,
     ...metadata,
@@ -311,17 +315,13 @@ async function updateTimeBlock(blockId, taskData) {
   }
 
   const existing = blocks[blockIndex];
-  const updated = withServiceNowMetadata(
-    {
-      ...existing,
-      task,
-      startMs,
-      endMs,
-      durationMs: endMs - startMs,
-    },
-    taskData,
-    task
-  );
+  const updated = withServiceNowMetadata({
+    ...existing,
+    task,
+    startMs,
+    endMs,
+    durationMs: endMs - startMs,
+  }, taskData);
 
   blocks[blockIndex] = updated;
   await saveTimeBlocks(blocks);
@@ -364,7 +364,7 @@ function createTimeBlock(task, startMs, endMs, source, taskData = {}) {
     createdAtMs: Date.now(),
   };
 
-  return withServiceNowMetadata(base, taskData, task);
+  return withServiceNowMetadata(base, taskData);
 }
 
 function generateBlockId() {

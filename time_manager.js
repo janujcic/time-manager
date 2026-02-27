@@ -833,6 +833,12 @@ saveLogButton.addEventListener("click", () => {
     const selectedAssignment = getSelectedAssignment();
     const selectedCode = getSelectedCode();
 
+    if (!selectedAssignment) {
+      snAssignmentSelect.classList.add("input-error");
+      setManualError("Please select an assigned task or category.");
+      return;
+    }
+
     if (!selectedCode) {
       snCodeSelect.classList.add("input-error");
       setManualError("Please select a time code.");
@@ -855,7 +861,6 @@ saveLogButton.addEventListener("click", () => {
       payload.snCategorySysId = selectedAssignment.data.sys_id || "";
       payload.snCategoryValue = selectedAssignment.data.value || "";
       payload.snCategoryLabel = selectedAssignment.data.label || "";
-    } else {
       payload.snCommentText = taskName;
     }
 
