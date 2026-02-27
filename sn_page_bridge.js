@@ -157,10 +157,18 @@
     );
   }
 
-  async function buildHeaders() {
+  async function buildHeaders({ requireCsrf = false, includeJson = false } = {}) {
     let token = getCsrfToken();
     if (!token) {
       token = await fetchCsrfTokenFallback();
+    }
+
+    if (requireCsrf && !token) {
+      throw {
+        code: "SN_CSRF_MISSING",
+        message: "Unable to resolve ServiceNow CSRF token in this tab.",
+        data: { recoveryHint: "Open a standard authenticated ServiceNow page and retry." },
+      };
     }
 
     const headers = {
@@ -170,16 +178,23 @@
     if (token) {
       headers["X-UserToken"] = token;
     }
+    if (includeJson) {
+      headers["Content-Type"] = "application/json";
+    }
 
     return headers;
   }
 
-  async function fetchTable(endpoint) {
-    const headers = await buildHeaders();
+  async function requestJson(endpoint, { method = "GET", body, requireCsrf = false } = {}) {
+    const headers = await buildHeaders({
+      requireCsrf,
+      includeJson: body !== undefined,
+    });
     const response = await fetch(endpoint, {
-      method: "GET",
+      method,
       credentials: "include",
       headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
     if (response.status === 401) {
@@ -198,13 +213,18 @@
     }
 
     if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
       throw {
         code: "SN_API_ERROR",
-        message: `ServiceNow request failed (${response.status}).`,
+        message: `ServiceNow request failed (${response.status}). ${errorText}`.trim(),
       };
     }
 
-    const payload = await response.json().catch(() => ({}));
+    return response.json().catch(() => ({}));
+  }
+
+  async function fetchTable(endpoint) {
+    const payload = await requestJson(endpoint, { method: "GET" });
     return Array.isArray(payload.result) ? payload.result : [];
   }
 
@@ -286,6 +306,278 @@
     return { tasks, categories, timeCodes };
   }
 
+  function toHours(value) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+      return 0;
+    }
+    return Math.round(numericValue * 100) / 100;
+  }
+
+  function isSubmittedState(row) {
+    const stateText = String(readDisplayValue(row?.state) || readValue(row?.state) || "")
+      .trim()
+      .toLowerCase();
+    return stateText === "submitted";
+  }
+
+  function getTimeCardSysId(row) {
+    return String(readValue(row?.sys_id) || readDisplayValue(row?.sys_id) || "").trim();
+  }
+
+  function buildTimeCardPayload(group, userId) {
+    const dayHours = group.dayHours || {};
+    const payload = {
+      monday: toHours(dayHours.monday),
+      tuesday: toHours(dayHours.tuesday),
+      wednesday: toHours(dayHours.wednesday),
+      thursday: toHours(dayHours.thursday),
+      friday: toHours(dayHours.friday),
+      saturday: toHours(dayHours.saturday),
+      sunday: toHours(dayHours.sunday),
+      total: toHours(group.totalHours),
+      comments: Array.isArray(group.comments)
+        ? Array.from(new Set(group.comments.map((item) => String(item || "").trim()).filter(Boolean))).join(
+            "\n"
+          )
+        : "",
+      week_starts_on: String(group.weekStartDate || ""),
+      user: userId,
+      u_time_card_code: String(group.snCodeSysId || ""),
+    };
+
+    if (group.snSelectionType === "task") {
+      payload.task = String(group.snTaskSysId || "");
+      payload.category = "task_work";
+    } else {
+      payload.task = "";
+      payload.category = String(group.snCategoryValue || "");
+    }
+
+    return payload;
+  }
+
+  function buildMatchingCardsEndpoint(group, userId) {
+    const baseQueryParts = [
+      `user=${userId}`,
+      `week_starts_on=${group.weekStartDate}`,
+      `u_time_card_code=${group.snCodeSysId}`,
+    ];
+    if (group.snSelectionType === "task") {
+      baseQueryParts.push(`task=${group.snTaskSysId}`);
+      baseQueryParts.push("category=task_work");
+    } else {
+      baseQueryParts.push("taskISEMPTY");
+      baseQueryParts.push(`category=${group.snCategoryValue}`);
+    }
+    baseQueryParts.push("ORDERBYDESCsys_updated_on");
+
+    const query = baseQueryParts.join("^");
+    return (
+      "/api/now/table/time_card?sysparm_display_value=all&sysparm_exclude_reference_link=true" +
+      "&sysparm_limit=50&sysparm_fields=sys_id,state,sys_updated_on,time_sheet,rate_type" +
+      `&sysparm_query=${encodeURIComponent(query)}`
+    );
+  }
+
+  async function fetchWeekDefaults(userId, weekStartDate, cache) {
+    const cacheKey = `${userId}|${weekStartDate}`;
+    if (cache.has(cacheKey)) {
+      return cache.get(cacheKey);
+    }
+
+    const query = `user=${userId}^week_starts_on=${weekStartDate}^ORDERBYDESCsys_updated_on`;
+    const endpoint =
+      "/api/now/table/time_card?sysparm_display_value=all&sysparm_exclude_reference_link=true" +
+      "&sysparm_limit=1&sysparm_fields=sys_id,time_sheet,rate_type" +
+      `&sysparm_query=${encodeURIComponent(query)}`;
+    const rows = await fetchTable(endpoint);
+    const firstRow = rows[0] || {};
+    const defaults = {
+      timeSheetSysId: String(readValue(firstRow.time_sheet) || ""),
+      rateTypeSysId: String(readValue(firstRow.rate_type) || ""),
+    };
+    cache.set(cacheKey, defaults);
+    return defaults;
+  }
+
+  async function upsertTimeCardGroup(group, userId, weekDefaultsCache) {
+    const endpoint = buildMatchingCardsEndpoint(group, userId);
+    const existingCards = await fetchTable(endpoint);
+    const editableCards = existingCards.filter((row) => !isSubmittedState(row));
+
+    if (editableCards.length === 0 && existingCards.length > 0) {
+      return {
+        status: "skipped",
+        code: "SYNC_SUBMITTED_SKIP",
+        message: "Matching time card is submitted and cannot be updated.",
+        action: "",
+        timeCardSysId: "",
+      };
+    }
+
+    const payload = buildTimeCardPayload(group, userId);
+    if (editableCards.length > 0) {
+      const targetCard = editableCards[0];
+      const targetSysId = getTimeCardSysId(targetCard);
+      if (!targetSysId) {
+        return {
+          status: "error",
+          code: "SYNC_UPSERT_FAILED",
+          message: "Editable time card record is missing sys_id.",
+          action: "",
+          timeCardSysId: "",
+        };
+      }
+
+      const updatePayload = await requestJson(`/api/now/table/time_card/${targetSysId}`, {
+        method: "PATCH",
+        body: payload,
+        requireCsrf: true,
+      });
+      const updatedSysId = String(
+        readValue(updatePayload?.result?.sys_id) || readDisplayValue(updatePayload?.result?.sys_id) || targetSysId
+      );
+      return {
+        status: "success",
+        action: "updated",
+        code: "",
+        message: "",
+        timeCardSysId: updatedSysId,
+      };
+    }
+
+    const defaults = await fetchWeekDefaults(userId, group.weekStartDate, weekDefaultsCache);
+    if (defaults.timeSheetSysId) {
+      payload.time_sheet = defaults.timeSheetSysId;
+    }
+    if (defaults.rateTypeSysId) {
+      payload.rate_type = defaults.rateTypeSysId;
+    }
+
+    const createPayload = await requestJson("/api/now/table/time_card", {
+      method: "POST",
+      body: payload,
+      requireCsrf: true,
+    });
+    const createdSysId = String(
+      readValue(createPayload?.result?.sys_id) || readDisplayValue(createPayload?.result?.sys_id) || ""
+    );
+    return {
+      status: "success",
+      action: "created",
+      code: "",
+      message: "",
+      timeCardSysId: createdSysId,
+    };
+  }
+
+  function normalizeSyncGroup(group = {}) {
+    const dayHours = group.dayHours || {};
+    return {
+      groupKey: String(group.groupKey || ""),
+      weekStartDate: String(group.weekStartDate || ""),
+      snSelectionType: String(group.snSelectionType || ""),
+      snTaskSysId: String(group.snTaskSysId || ""),
+      snCategoryValue: String(group.snCategoryValue || ""),
+      snCodeSysId: String(group.snCodeSysId || ""),
+      dayHours: {
+        monday: toHours(dayHours.monday),
+        tuesday: toHours(dayHours.tuesday),
+        wednesday: toHours(dayHours.wednesday),
+        thursday: toHours(dayHours.thursday),
+        friday: toHours(dayHours.friday),
+        saturday: toHours(dayHours.saturday),
+        sunday: toHours(dayHours.sunday),
+      },
+      totalHours: toHours(group.totalHours),
+      comments: Array.isArray(group.comments) ? group.comments : [],
+    };
+  }
+
+  async function syncTimeCards(payload = {}) {
+    const groups = Array.isArray(payload.groups) ? payload.groups : [];
+    let userId = String(payload.userId || "");
+    if (!userId) {
+      const sessionUser = await resolveSessionUser();
+      userId = String(sessionUser.userId || "");
+    }
+
+    if (!userId) {
+      throw {
+        code: "SN_API_ERROR",
+        message: "Unable to resolve current ServiceNow user for sync.",
+        data: { recoveryHint: "Connect again and retry sync." },
+      };
+    }
+
+    const results = [];
+    const weekDefaultsCache = new Map();
+    for (const rawGroup of groups) {
+      const group = normalizeSyncGroup(rawGroup);
+      if (!group.groupKey || !group.weekStartDate || !group.snCodeSysId) {
+        results.push({
+          groupKey: group.groupKey,
+          weekStartDate: group.weekStartDate,
+          status: "error",
+          code: "SYNC_INVALID_GROUP",
+          action: "",
+          message: "Missing required group fields for sync.",
+          timeCardSysId: "",
+        });
+        continue;
+      }
+      if (group.snSelectionType === "task" && !group.snTaskSysId) {
+        results.push({
+          groupKey: group.groupKey,
+          weekStartDate: group.weekStartDate,
+          status: "error",
+          code: "SYNC_INVALID_GROUP",
+          action: "",
+          message: "Task-linked group is missing task sys_id.",
+          timeCardSysId: "",
+        });
+        continue;
+      }
+      if (group.snSelectionType === "category" && !group.snCategoryValue) {
+        results.push({
+          groupKey: group.groupKey,
+          weekStartDate: group.weekStartDate,
+          status: "error",
+          code: "SYNC_INVALID_GROUP",
+          action: "",
+          message: "Category-linked group is missing category value.",
+          timeCardSysId: "",
+        });
+        continue;
+      }
+
+      try {
+        const upsertResult = await upsertTimeCardGroup(group, userId, weekDefaultsCache);
+        results.push({
+          groupKey: group.groupKey,
+          weekStartDate: group.weekStartDate,
+          ...upsertResult,
+        });
+      } catch (error) {
+        if (error?.code === "SN_NOT_LOGGED_IN") {
+          throw error;
+        }
+        results.push({
+          groupKey: group.groupKey,
+          weekStartDate: group.weekStartDate,
+          status: "error",
+          code: error?.code || "SYNC_UPSERT_FAILED",
+          action: "",
+          message: error?.message || "Failed to sync time card group.",
+          timeCardSysId: "",
+        });
+      }
+    }
+
+    return { results };
+  }
+
   window.addEventListener("message", async (event) => {
     if (event.source !== window) {
       return;
@@ -305,6 +597,8 @@
         data = await checkSession();
       } else if (message.action === "fetchLookups") {
         data = await fetchLookups(message.payload || {});
+      } else if (message.action === "syncTimeCards") {
+        data = await syncTimeCards(message.payload || {});
       } else {
         throw {
           code: "SN_API_ERROR",

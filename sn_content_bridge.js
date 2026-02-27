@@ -69,6 +69,7 @@
 
     const envelope = message.envelope || {};
     const requestId = envelope.requestId;
+    const actionName = String(envelope.action || "operation");
     if (!requestId) {
       sendResponse({ status: "error", code: "SN_API_ERROR", message: "Missing bridge request id." });
       return false;
@@ -82,7 +83,7 @@
       sendResponse({
         status: "error",
         code: "SN_API_ERROR",
-        message: "ServiceNow bridge request timed out.",
+        message: `ServiceNow bridge request timed out (${actionName}).`,
       });
     }, timeoutMs);
 
