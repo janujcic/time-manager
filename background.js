@@ -567,21 +567,8 @@ function generateBlockId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function sumDurationForTask(blocks, taskName) {
-  return blocks
-    .filter((block) => block.task === taskName)
-    .reduce((sum, block) => sum + block.durationMs, 0);
-}
-
-async function refreshElapsedTimeForTask(taskName) {
-  if (!taskName) {
-    timerData.elapsedTime = 0;
-    elapsedBeforeActiveMs = 0;
-    return;
-  }
-
-  const blocks = await getTimeBlocks();
-  elapsedBeforeActiveMs = sumDurationForTask(blocks, taskName);
+async function refreshElapsedTimeForTask() {
+  elapsedBeforeActiveMs = 0;
   timerData.elapsedTime = elapsedBeforeActiveMs;
 }
 
