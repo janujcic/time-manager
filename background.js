@@ -1167,6 +1167,112 @@ async function getCachedLookups() {
   };
 }
 
+function createSyncReportSkeleton(rangePreset, aggregation) {
+  return {
+    rangePreset,
+    requestedBlockCount: Number(aggregation.requestedBlockCount) || 0,
+    groupCount: Array.isArray(aggregation.groups) ? aggregation.groups.length : 0,
+    invalidBlocks: Array.isArray(aggregation.invalidBlocks) ? aggregation.invalidBlocks : [],
+    skippedInvalid: Array.isArray(aggregation.invalidBlocks) ? aggregation.invalidBlocks.length : 0,
+    synced: 0,
+    created: 0,
+    updated: 0,
+    skippedSubmitted: 0,
+    failed: 0,
+    details: [],
+  };
+}
+
+function mergeSyncResultIntoReport(report, result) {
+  const normalized = {
+    groupKey: String(result?.groupKey || ""),
+    weekStartDate: String(result?.weekStartDate || ""),
+    status: String(result?.status || ""),
+    code: String(result?.code || ""),
+    action: String(result?.action || ""),
+    message: String(result?.message || ""),
+    timeCardSysId: String(result?.timeCardSysId || ""),
+  };
+  report.details.push(normalized);
+
+  if (normalized.action === "created") {
+    report.created += 1;
+    report.synced += 1;
+    return;
+  }
+  if (normalized.action === "updated") {
+    report.updated += 1;
+    report.synced += 1;
+    return;
+  }
+  if (normalized.code === "SYNC_SUBMITTED_SKIP") {
+    report.skippedSubmitted += 1;
+    return;
+  }
+  if (normalized.status === "error" || normalized.code) {
+    report.failed += 1;
+  }
+}
+
+async function serviceNowSyncVisibleBlocks(requestData = {}) {
+  const rangePreset = readString(requestData.rangePreset);
+  if (!rangePreset || rangePreset === "all") {
+    return createSnError(
+      "SN_API_ERROR",
+      "Sync is only available for a bounded range (today/week/month/custom).",
+      "Switch from All Time to a specific range and retry."
+    );
+  }
+
+  const blockIds = Array.isArray(requestData.blockIds)
+    ? requestData.blockIds.map((id) => String(id || "")).filter(Boolean)
+    : [];
+  if (blockIds.length === 0) {
+    return createSnError(
+      "SN_API_ERROR",
+      "No time blocks were provided for sync.",
+      "Select a range with visible blocks, then retry."
+    );
+  }
+
+  const connectResponse = await connectServiceNowSession();
+  if (connectResponse.status !== "success") {
+    return connectResponse;
+  }
+
+  const allBlocks = await getTimeBlocks();
+  const aggregation = aggregateBlocksForSync(allBlocks, blockIds);
+  const report = createSyncReportSkeleton(rangePreset, aggregation);
+  if (aggregation.groups.length === 0) {
+    return { status: "success", data: report };
+  }
+
+  const bridgeResponse = await sendSnBridgeRequest(
+    connectResponse.data.tabId,
+    connectResponse.data.instanceUrl,
+    "syncTimeCards",
+    {
+      userId: connectResponse.data.userId || lastConnectedSnUserId || "",
+      groups: aggregation.groups,
+    }
+  );
+  if (bridgeResponse.status !== "success") {
+    return bridgeResponse;
+  }
+
+  const bridgeResults = Array.isArray(bridgeResponse.data?.results)
+    ? bridgeResponse.data.results
+    : [];
+  for (const result of bridgeResults) {
+    mergeSyncResultIntoReport(report, result);
+  }
+
+  return {
+    status: "success",
+    data: report,
+  };
+}
+
 function transformMilisecondsToTime(miliseconds) {
   const seconds = Math.floor(miliseconds / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -1250,6 +1356,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse(response);
     } else if (request.action === "servicenow/getCachedLookups") {
       sendResponse({ status: "success", data: await getCachedLookups() });
+    } else if (request.action === "servicenow/syncVisibleBlocks") {
+      const response = await serviceNowSyncVisibleBlocks(request.data || {});
+      sendResponse(response);
     } else {
       sendResponse({ status: "error", message: "Unsupported action." });
     }
