@@ -361,18 +361,21 @@ table tr:hover {
 
 #sn-save-config-button,
 #sn-connect-button,
-#sn-refresh-lookups-button {
+#sn-refresh-lookups-button,
+#sn-sync-button {
   background-color: #2f71d3;
 }
 
 #sn-save-config-button:hover,
 #sn-connect-button:hover,
-#sn-refresh-lookups-button:hover {
+#sn-refresh-lookups-button:hover,
+#sn-sync-button:hover {
   background-color: #0254ce;
 }
 
 #sn-connect-button:disabled,
-#sn-refresh-lookups-button:disabled {
+#sn-refresh-lookups-button:disabled,
+#sn-sync-button:disabled {
   background-color: #9aa8bc;
   cursor: not-allowed;
 }

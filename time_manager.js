@@ -31,6 +31,7 @@ const snInstanceUrlInput = document.getElementById("sn-instance-url");
 const snSaveConfigButton = document.getElementById("sn-save-config-button");
 const snConnectButton = document.getElementById("sn-connect-button");
 const snRefreshLookupsButton = document.getElementById("sn-refresh-lookups-button");
+const snSyncButton = document.getElementById("sn-sync-button");
 const snStatus = document.getElementById("sn-status");
 const snConnectionBadge = document.getElementById("sn-connection-badge");
 
@@ -67,6 +68,7 @@ function bindDashboardEvents() {
   snSaveConfigButton.addEventListener("click", saveServiceNowConfig);
   snConnectButton.addEventListener("click", connectServiceNowSession);
   snRefreshLookupsButton.addEventListener("click", fetchServiceNowLookups);
+  snSyncButton.addEventListener("click", syncVisibleRangeToServiceNow);
   taskNameInput.addEventListener("input", onTaskNameInputChanged);
   snAssignmentSelect.addEventListener("change", clearManualInputBorders);
   snCodeSelect.addEventListener("change", clearManualInputBorders);
@@ -82,6 +84,7 @@ function updateServiceNowUiVisibility() {
   snAssignmentWrap.style.display = visible ? "flex" : "none";
   snCodeWrap.style.display = visible ? "flex" : "none";
   snCommentWrap.style.display = visible ? "flex" : "none";
+  snSyncButton.style.display = visible && rangePresetSelect.value !== "all" ? "inline-block" : "none";
   updateServiceNowActionStates();
   updateSnConnectionBadge();
 }
@@ -106,8 +109,10 @@ function updateSnConnectionBadge() {
 function updateServiceNowActionStates() {
   const enabled = Boolean(snConfig.enabled);
   const connected = enabled && snConnectionState.connected;
+  const canSyncRange = enabled && rangePresetSelect.value !== "all";
   snConnectButton.disabled = !enabled;
   snRefreshLookupsButton.disabled = !connected;
+  snSyncButton.disabled = !canSyncRange || !connected || filteredBlocks.length === 0;
 }
 
 function setSnConnectionState(nextState) {
@@ -519,6 +524,14 @@ function applyFiltersAndRender() {
   });
 
   renderAllSections();
+  updateServiceNowActionStates();
+  if (snConfig.enabled) {
+    snSyncButton.style.display = rangePresetSelect.value === "all" ? "none" : "inline-block";
+  }
+}
+
+function syncVisibleRangeToServiceNow() {
+  setSnStatus("Sync implementation will run in the next step.");
 }
 
 function aggregateBlocksByTask(blocks) {
