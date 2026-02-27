@@ -9,6 +9,8 @@ const snAssignmentWrap = document.getElementById("sn-assignment-wrap");
 const snAssignmentSelect = document.getElementById("sn-assignment-select");
 const snCodeWrap = document.getElementById("sn-code-wrap");
 const snCodeSelect = document.getElementById("sn-code-select");
+const snCommentWrap = document.getElementById("sn-comment-wrap");
+const snCommentInput = document.getElementById("sn-comment-input");
 const blockLogTableBody = document.querySelector("#block-log-table tbody");
 
 const rangePresetSelect = document.getElementById("range-preset");
@@ -68,6 +70,7 @@ function bindDashboardEvents() {
   taskNameInput.addEventListener("input", onTaskNameInputChanged);
   snAssignmentSelect.addEventListener("change", clearManualInputBorders);
   snCodeSelect.addEventListener("change", clearManualInputBorders);
+  snCommentInput.addEventListener("input", clearManualInputBorders);
 }
 
 function setSnStatus(message) {
@@ -78,6 +81,7 @@ function updateServiceNowUiVisibility() {
   const visible = Boolean(snConfig.enabled);
   snAssignmentWrap.style.display = visible ? "flex" : "none";
   snCodeWrap.style.display = visible ? "flex" : "none";
+  snCommentWrap.style.display = visible ? "flex" : "none";
   updateServiceNowActionStates();
   updateSnConnectionBadge();
 }
@@ -712,12 +716,14 @@ function clearManualInputBorders() {
   taskEndDatetimeInput.classList.remove("input-error");
   snAssignmentSelect.classList.remove("input-error");
   snCodeSelect.classList.remove("input-error");
+  snCommentInput.classList.remove("input-error");
 }
 
 function resetManualForm() {
   taskNameInput.value = "";
   taskStartDatetimeInput.value = "";
   taskEndDatetimeInput.value = "";
+  snCommentInput.value = "";
   renderAssignmentOptions();
   renderCodeOptions();
   editingBlockId = null;
@@ -766,6 +772,7 @@ function openEditBlockModal(blockId) {
         : "";
   renderAssignmentOptions(assignmentValue);
   renderCodeOptions(block.snCodeSysId || "");
+  snCommentInput.value = block.snCommentText || "";
   clearManualMessages();
   clearManualInputBorders();
   addLogModal.style.display = "block";
@@ -832,6 +839,7 @@ saveLogButton.addEventListener("click", () => {
   if (snConfig.enabled) {
     const selectedAssignment = getSelectedAssignment();
     const selectedCode = getSelectedCode();
+    const snCommentText = snCommentInput.value.trim();
 
     if (!selectedAssignment) {
       snAssignmentSelect.classList.add("input-error");
@@ -861,9 +869,14 @@ saveLogButton.addEventListener("click", () => {
       payload.snCategorySysId = selectedAssignment.data.sys_id || "";
       payload.snCategoryValue = selectedAssignment.data.value || "";
       payload.snCategoryLabel = selectedAssignment.data.label || "";
-      payload.snCommentText = taskName;
+      if (!snCommentText) {
+        snCommentInput.classList.add("input-error");
+        setManualError("Extra notes are required when category is selected.");
+        return;
+      }
     }
 
+    payload.snCommentText = snCommentText;
     payload.snCodeSysId = selectedCode.sys_id || "";
     payload.snCodeValue = selectedCode.u_time_card_code || "";
     payload.snCodeDescription = selectedCode.u_description || "";

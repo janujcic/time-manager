@@ -16,6 +16,8 @@ const mainSnAssignmentInput = document.getElementById("main-sn-assignment-input"
 const mainSnAssignmentList = document.getElementById("main-sn-assignment-list");
 const mainSnCodeWrap = document.getElementById("main-sn-code-wrap");
 const mainSnCodeSelect = document.getElementById("main-sn-code-select");
+const mainSnNotesWrap = document.getElementById("main-sn-notes-wrap");
+const mainSnNotesInput = document.getElementById("main-sn-notes-input");
 
 function showTaskNameError(message) {
   taskNameError.textContent = message;
@@ -36,6 +38,7 @@ function showMainSnError(message) {
 function clearMainSnError() {
   mainSnAssignmentInput.classList.remove("input-error");
   mainSnCodeSelect.classList.remove("input-error");
+  mainSnNotesInput.classList.remove("input-error");
 }
 
 function transformMilisecondsToTime(miliseconds) {
@@ -68,12 +71,14 @@ function showRegistrationState() {
   startButton.style.display = "inline-block";
   elapsedTimeDisplay.textContent = "0h 0m 0s";
   currentTaskName = "";
+  mainSnNotesInput.value = "";
   clearMainSnError();
 }
 
 function updateMainSnVisibility() {
   mainSnAssignmentWrap.style.display = "flex";
   mainSnCodeWrap.style.display = snConfig.enabled ? "flex" : "none";
+  mainSnNotesWrap.style.display = snConfig.enabled ? "flex" : "none";
 }
 
 function getAllAssignmentOptions() {
@@ -221,6 +226,7 @@ function refreshFromBackground() {
 
     currentTaskName = timerData.savedTaskName || "";
     mainSnAssignmentInput.value = currentTaskName;
+    mainSnNotesInput.value = timerData.snCommentText || "";
     elapsedTimeDisplay.textContent = transformMilisecondsToTime(timerData.elapsedTime || 0);
 
     renderMainAssignmentOptions(getAssignmentLabelFromTimerData(timerData));
@@ -246,6 +252,9 @@ document.addEventListener("DOMContentLoaded", () => {
   mainSnCodeSelect.addEventListener("change", () => {
     clearMainSnError();
   });
+  mainSnNotesInput.addEventListener("input", () => {
+    clearMainSnError();
+  });
   refreshFromBackground();
 });
 
@@ -261,6 +270,7 @@ startButton.addEventListener("click", () => {
   if (snConfig.enabled) {
     const selectedAssignment = getSelectedAssignment();
     const selectedCode = getSelectedCodeData();
+    const snCommentText = mainSnNotesInput.value.trim();
 
     if (!selectedAssignment) {
       clearTaskNameError();
@@ -294,7 +304,15 @@ startButton.addEventListener("click", () => {
       taskData.snCategoryValue = selectedAssignment.data.value || "";
       taskData.snCategoryLabel = selectedAssignment.data.label || "";
       taskName = selectedAssignment.data.label || selectedAssignment.data.value || taskName;
-      taskData.snCommentText = taskName;
+      if (!snCommentText) {
+        clearTaskNameError();
+        showMainSnError("Extra notes are required when category is selected.");
+        mainSnNotesInput.classList.add("input-error");
+        return;
+      }
+      taskData.snCommentText = snCommentText;
+    } else {
+      taskData.snCommentText = snCommentText;
     }
 
     taskData.snCodeSysId = selectedCode.sys_id || "";
@@ -344,6 +362,7 @@ finishButton.addEventListener("click", () => {
       showRegistrationState();
       mainSnAssignmentInput.value = "";
       mainSnCodeSelect.value = "";
+      mainSnNotesInput.value = "";
       clearTaskNameError();
       renderMainAssignmentOptions();
       renderMainCodeOptions();

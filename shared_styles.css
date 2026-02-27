@@ -100,7 +100,8 @@ button {
 
 #task_name,
 #main-sn-assignment-input,
-#main-sn-code-select {
+#main-sn-code-select,
+#main-sn-notes-input {
   width: 100%;
   max-width: 360px;
   padding: 6px;
@@ -411,7 +412,8 @@ table tr:hover {
 }
 
 #sn-assignment-select,
-#sn-code-select {
+#sn-code-select,
+#sn-comment-input {
   width: 100%;
   min-width: 280px;
   padding: 6px;
