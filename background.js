@@ -7,6 +7,8 @@ const DEFAULT_SN_CONFIG = {
   enabled: false,
   instanceUrl: "",
 };
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEKDAY_FIELDS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
 let timerData = {
   savedTaskName: "",
@@ -565,9 +567,9 @@ function aggregateBlocksByTask(blocks) {
 function getStartOfWeek(date) {
   const localDate = new Date(date);
   const dayOfWeek = localDate.getDay();
-  const sundayBasedOffset = -dayOfWeek;
+  const mondayBasedOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
   localDate.setHours(0, 0, 0, 0);
-  localDate.setDate(localDate.getDate() + sundayBasedOffset);
+  localDate.setDate(localDate.getDate() + mondayBasedOffset);
   return localDate;
 }
 
@@ -606,6 +608,172 @@ function aggregateBlocksByPeriod(blocks, periodType = "day") {
 async function getAggregatedSessions() {
   const blocks = await getTimeBlocks();
   return aggregateBlocksByTask(blocks);
+}
+
+function roundHours(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+function formatDateKey(ms) {
+  const date = new Date(ms);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate()
+  ).padStart(2, "0")}`;
+}
+
+function getWeekdayFieldName(ms) {
+  const day = new Date(ms).getDay();
+  if (day === 0) {
+    return "sunday";
+  }
+  return WEEKDAY_FIELDS[day - 1];
+}
+
+function splitBlockByDay(block) {
+  const startMs = Number(block.startMs);
+  const endMs = Number(block.endMs);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return [];
+  }
+
+  const slices = [];
+  let cursor = startMs;
+  while (cursor < endMs) {
+    const cursorDate = new Date(cursor);
+    cursorDate.setHours(0, 0, 0, 0);
+    const nextDayMs = cursorDate.getTime() + DAY_MS;
+    const sliceEnd = Math.min(endMs, nextDayMs);
+    if (sliceEnd > cursor) {
+      slices.push({
+        startMs: cursor,
+        endMs: sliceEnd,
+        durationMs: sliceEnd - cursor,
+      });
+    }
+    cursor = sliceEnd;
+  }
+
+  return slices;
+}
+
+function buildSyncGroupKey(block, weekStartDate) {
+  const selectionType = block.snSelectionType || "";
+  const selectionKey =
+    selectionType === "task"
+      ? `task:${block.snTaskSysId || ""}`
+      : selectionType === "category"
+        ? `category:${block.snCategorySysId || block.snCategoryValue || ""}`
+        : "none";
+  return `${weekStartDate}|${selectionType}|${selectionKey}|${block.snCodeSysId || ""}`;
+}
+
+function aggregateBlocksForSync(blocks, blockIds = []) {
+  const allowedIds = new Set(
+    (Array.isArray(blockIds) ? blockIds : []).map((id) => String(id || "")).filter(Boolean)
+  );
+  const useFilter = allowedIds.size > 0;
+  const groups = new Map();
+  const invalidBlocks = [];
+
+  for (const block of blocks) {
+    const blockId = String(block.id || "");
+    if (useFilter && !allowedIds.has(blockId)) {
+      continue;
+    }
+
+    if (!block.snSelectionType || !block.snCodeSysId) {
+      invalidBlocks.push({ blockId, reason: "missing assignment or time code" });
+      continue;
+    }
+    if (block.snSelectionType === "task" && !block.snTaskSysId) {
+      invalidBlocks.push({ blockId, reason: "missing task sys_id" });
+      continue;
+    }
+    if (block.snSelectionType === "category") {
+      if (!block.snCategoryValue) {
+        invalidBlocks.push({ blockId, reason: "missing category value" });
+        continue;
+      }
+      if (!String(block.snCommentText || "").trim()) {
+        invalidBlocks.push({ blockId, reason: "missing category notes" });
+        continue;
+      }
+    }
+
+    const slices = splitBlockByDay(block);
+    if (slices.length === 0) {
+      invalidBlocks.push({ blockId, reason: "invalid block duration" });
+      continue;
+    }
+
+    for (const slice of slices) {
+      const weekStartDate = formatDateKey(getStartOfWeek(slice.startMs).getTime());
+      const groupKey = buildSyncGroupKey(block, weekStartDate);
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, {
+          groupKey,
+          weekStartDate,
+          snSelectionType: block.snSelectionType || "",
+          snTaskSysId: block.snTaskSysId || "",
+          snTaskNumber: block.snTaskNumber || "",
+          snTaskShortDescription: block.snTaskShortDescription || "",
+          snCategorySysId: block.snCategorySysId || "",
+          snCategoryValue: block.snCategoryValue || "",
+          snCategoryLabel: block.snCategoryLabel || "",
+          snCodeSysId: block.snCodeSysId || "",
+          snCodeValue: block.snCodeValue || "",
+          snCodeDescription: block.snCodeDescription || "",
+          dayHours: {
+            monday: 0,
+            tuesday: 0,
+            wednesday: 0,
+            thursday: 0,
+            friday: 0,
+            saturday: 0,
+            sunday: 0,
+          },
+          totalHours: 0,
+          comments: [],
+          blockIds: [],
+        });
+      }
+
+      const group = groups.get(groupKey);
+      const weekdayField = getWeekdayFieldName(slice.startMs);
+      const sliceHours = slice.durationMs / (60 * 60 * 1000);
+      group.dayHours[weekdayField] += sliceHours;
+      group.totalHours += sliceHours;
+      if (!group.blockIds.includes(blockId)) {
+        group.blockIds.push(blockId);
+      }
+      const trimmedComment = String(block.snCommentText || "").trim();
+      if (trimmedComment && !group.comments.includes(trimmedComment)) {
+        group.comments.push(trimmedComment);
+      }
+    }
+  }
+
+  const normalizedGroups = Array.from(groups.values()).map((group) => {
+    const dayHours = {};
+    for (const field of WEEKDAY_FIELDS) {
+      dayHours[field] = roundHours(group.dayHours[field]);
+    }
+    const totalHours = roundHours(
+      WEEKDAY_FIELDS.reduce((sum, field) => sum + dayHours[field], 0)
+    );
+
+    return {
+      ...group,
+      dayHours,
+      totalHours,
+    };
+  });
+
+  return {
+    groups: normalizedGroups,
+    invalidBlocks,
+    requestedBlockCount: useFilter ? allowedIds.size : blocks.length,
+  };
 }
 
 async function saveManualSession(taskData) {

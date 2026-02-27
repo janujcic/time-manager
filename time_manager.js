@@ -456,7 +456,8 @@ function startOfToday() {
 function startOfWeek() {
   const date = new Date();
   const day = date.getDay();
-  date.setDate(date.getDate() - day);
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + mondayOffset);
   date.setHours(0, 0, 0, 0);
   return date.getTime();
 }
@@ -531,7 +532,41 @@ function applyFiltersAndRender() {
 }
 
 function syncVisibleRangeToServiceNow() {
-  setSnStatus("Sync implementation will run in the next step.");
+  if (!snConfig.enabled) {
+    setSnStatus("Enable ServiceNow integration first.");
+    return;
+  }
+  if (!snConnectionState.connected) {
+    setSnStatus("Connect ServiceNow before syncing.");
+    return;
+  }
+  if (rangePresetSelect.value === "all") {
+    setSnStatus("Select a specific date range before syncing.");
+    return;
+  }
+
+  const blockIds = filteredBlocks.map((block) => block.id).filter(Boolean);
+  if (blockIds.length === 0) {
+    setSnStatus("No time blocks in the selected range to sync.");
+    return;
+  }
+
+  chrome.runtime.sendMessage(
+    {
+      action: "servicenow/syncVisibleBlocks",
+      data: {
+        rangePreset: rangePresetSelect.value,
+        blockIds,
+      },
+    },
+    (response) => {
+      if (!response || response.status !== "success") {
+        setSnStatus(response?.message || "Sync is not available yet.");
+        return;
+      }
+      setSnStatus("Sync completed.");
+    }
+  );
 }
 
 function aggregateBlocksByTask(blocks) {
@@ -559,7 +594,8 @@ function aggregateBlocksByTask(blocks) {
 function getWeekKey(ms) {
   const date = new Date(ms);
   const day = date.getDay();
-  date.setDate(date.getDate() - day);
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + mondayOffset);
   date.setHours(0, 0, 0, 0);
   return formatDateOnly(date.getTime());
 }
