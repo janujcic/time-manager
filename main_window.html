@@ -20,10 +20,17 @@
           placeholder="Enter task or search assigned tasks/categories"
         />
         <datalist id="main-sn-assignment-list"></datalist>
+        <p id="main-sn-assignment-error" class="field-error" role="alert" aria-live="polite"></p>
       </div>
       <div id="main-sn-code-wrap" class="main-sn-timecard-wrap" style="display: none">
         <label for="main-sn-code-select">Time Code</label>
         <select id="main-sn-code-select"></select>
+        <p id="main-sn-code-error" class="field-error" role="alert" aria-live="polite"></p>
+      </div>
+      <div id="main-sn-rate-type-wrap" class="main-sn-timecard-wrap" style="display: none">
+        <label for="main-sn-rate-type-select">Rate Type</label>
+        <select id="main-sn-rate-type-select"></select>
+        <p id="main-sn-rate-type-error" class="field-error" role="alert" aria-live="polite"></p>
       </div>
       <div id="main-sn-notes-wrap" class="main-sn-timecard-wrap" style="display: none">
         <label for="main-sn-notes-input">Extra Notes</label>
@@ -32,6 +39,7 @@
           id="main-sn-notes-input"
           placeholder="Optional for task, required for category"
         />
+        <p id="main-sn-notes-error" class="field-error" role="alert" aria-live="polite"></p>
       </div>
     </div>
     <p id="task-name-error" class="field-error" role="alert" aria-live="polite"></p>

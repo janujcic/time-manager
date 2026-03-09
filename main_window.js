@@ -1,6 +1,6 @@
 let currentTaskName = "";
-let snConfig = { enabled: false, instanceUrl: "" };
-let snLookupCache = { fetchedAtMs: 0, tasks: [], categories: [], timeCodes: [] };
+let snConfig = { enabled: false, instanceUrl: "", defaultRateTypeSysId: "" };
+let snLookupCache = { fetchedAtMs: 0, tasks: [], categories: [], timeCodes: [], rateTypes: [] };
 
 const taskNameError = document.getElementById("task-name-error");
 const enterStartTask = document.querySelector(".enter-start-task");
@@ -15,31 +15,57 @@ const finishButton = document.getElementById("finish-button");
 const mainSnAssignmentWrap = document.getElementById("main-sn-assignment-wrap");
 const mainSnAssignmentInput = document.getElementById("main-sn-assignment-input");
 const mainSnAssignmentList = document.getElementById("main-sn-assignment-list");
+const mainSnAssignmentError = document.getElementById("main-sn-assignment-error");
 const mainSnCodeWrap = document.getElementById("main-sn-code-wrap");
 const mainSnCodeSelect = document.getElementById("main-sn-code-select");
+const mainSnCodeError = document.getElementById("main-sn-code-error");
+const mainSnRateTypeWrap = document.getElementById("main-sn-rate-type-wrap");
+const mainSnRateTypeSelect = document.getElementById("main-sn-rate-type-select");
+const mainSnRateTypeError = document.getElementById("main-sn-rate-type-error");
 const mainSnNotesWrap = document.getElementById("main-sn-notes-wrap");
 const mainSnNotesInput = document.getElementById("main-sn-notes-input");
+const mainSnNotesError = document.getElementById("main-sn-notes-error");
 
 function showTaskNameError(message) {
-  taskNameError.textContent = message;
+  mainSnAssignmentError.textContent = message;
   mainSnAssignmentInput.classList.add("input-error");
 }
 
 function clearTaskNameError() {
   taskNameError.textContent = "";
-  mainSnAssignmentInput.classList.remove("input-error");
+  mainSnAssignmentError.textContent = "";
 }
 
-function showMainSnError(message) {
-  taskNameError.textContent = message;
+function showMainAssignmentError(message) {
+  mainSnAssignmentError.textContent = message;
   mainSnAssignmentInput.classList.add("input-error");
+}
+
+function showMainCodeError(message) {
+  mainSnCodeError.textContent = message;
   mainSnCodeSelect.classList.add("input-error");
+}
+
+function showMainNotesError(message) {
+  mainSnNotesError.textContent = message;
+  mainSnNotesInput.classList.add("input-error");
+}
+
+function showMainSnRateTypeError(message) {
+  mainSnRateTypeError.textContent = message || "";
+  mainSnRateTypeSelect.classList.add("input-error");
 }
 
 function clearMainSnError() {
   mainSnAssignmentInput.classList.remove("input-error");
   mainSnCodeSelect.classList.remove("input-error");
+  mainSnRateTypeSelect.classList.remove("input-error");
   mainSnNotesInput.classList.remove("input-error");
+  mainSnAssignmentError.textContent = "";
+  mainSnCodeError.textContent = "";
+  mainSnNotesError.textContent = "";
+  mainSnRateTypeError.textContent = "";
+  taskNameError.textContent = "";
 }
 
 function transformMilisecondsToTime(miliseconds) {
@@ -85,12 +111,14 @@ function showRegistrationState() {
   elapsedTimeDisplay.textContent = "0h 0m 0s";
   currentTaskName = "";
   mainSnNotesInput.value = "";
+  renderMainRateTypeOptions(snConfig.defaultRateTypeSysId || "");
   clearMainSnError();
 }
 
 function updateMainSnVisibility() {
   mainSnAssignmentWrap.style.display = "flex";
   mainSnCodeWrap.style.display = snConfig.enabled ? "flex" : "none";
+  mainSnRateTypeWrap.style.display = snConfig.enabled ? "flex" : "none";
   mainSnNotesWrap.style.display = snConfig.enabled ? "flex" : "none";
 }
 
@@ -179,6 +207,40 @@ function renderMainCodeOptions(selectedCodeSysId = "") {
   }
 }
 
+function renderMainRateTypeOptions(selectedRateTypeSysId = "") {
+  const rateTypes = Array.isArray(snLookupCache.rateTypes) ? [...snLookupCache.rateTypes] : [];
+  rateTypes.sort((a, b) =>
+    String(a?.name || "").localeCompare(String(b?.name || ""), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    })
+  );
+
+  mainSnRateTypeSelect.innerHTML = "";
+  if (rateTypes.length === 0) {
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "No rate types available";
+    mainSnRateTypeSelect.appendChild(placeholder);
+  } else if (!selectedRateTypeSysId) {
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Select rate type";
+    mainSnRateTypeSelect.appendChild(placeholder);
+  }
+
+  rateTypes.forEach((rateType) => {
+    const option = document.createElement("option");
+    option.value = rateType.sys_id;
+    option.textContent = rateType.label || rateType.name || rateType.sys_id;
+    mainSnRateTypeSelect.appendChild(option);
+  });
+
+  if (selectedRateTypeSysId) {
+    mainSnRateTypeSelect.value = selectedRateTypeSysId;
+  }
+}
+
 function getSelectedAssignment() {
   const typedValue = String(mainSnAssignmentInput.value || "").trim();
   if (!typedValue) {
@@ -221,8 +283,10 @@ function getAssignmentLabelFromTimerData(timerData) {
 function loadMainSnConfigAndLookups() {
   chrome.runtime.sendMessage({ action: "servicenow/getConfig" }, (configResponse) => {
     if (configResponse?.status === "success") {
-      snConfig = configResponse.data || { enabled: false, instanceUrl: "" };
+      snConfig = configResponse.data || { enabled: false, instanceUrl: "", defaultRateTypeSysId: "" };
+      snConfig.defaultRateTypeSysId = snConfig.defaultRateTypeSysId || "";
       updateMainSnVisibility();
+      renderMainRateTypeOptions(snConfig.defaultRateTypeSysId);
     }
   });
 
@@ -233,9 +297,11 @@ function loadMainSnConfigAndLookups() {
         tasks: [],
         categories: [],
         timeCodes: [],
+        rateTypes: [],
       };
       renderMainAssignmentOptions();
       renderMainCodeOptions();
+      renderMainRateTypeOptions(snConfig.defaultRateTypeSysId || "");
     }
   });
 }
@@ -255,6 +321,7 @@ function refreshFromBackground() {
 
     renderMainAssignmentOptions(getAssignmentLabelFromTimerData(timerData));
     renderMainCodeOptions(timerData.snCodeSysId || "");
+    renderMainRateTypeOptions(timerData.snRateTypeSysId || snConfig.defaultRateTypeSysId || "");
 
     if (currentTaskName) {
       showRunningState(Boolean(timerData.isRunning));
@@ -274,6 +341,9 @@ document.addEventListener("DOMContentLoaded", () => {
     renderMainAssignmentOptions();
   });
   mainSnCodeSelect.addEventListener("change", () => {
+    clearMainSnError();
+  });
+  mainSnRateTypeSelect.addEventListener("change", () => {
     clearMainSnError();
   });
   mainSnNotesInput.addEventListener("input", () => {
@@ -297,14 +367,18 @@ startButton.addEventListener("click", () => {
     const snCommentText = mainSnNotesInput.value.trim();
 
     if (!selectedAssignment) {
-      clearTaskNameError();
-      showMainSnError("Please select an assigned task or category.");
+      showMainAssignmentError("Please select an assigned task or category.");
       return;
     }
 
     if (!selectedCode) {
-      clearTaskNameError();
-      showMainSnError("Please select a time code.");
+      showMainCodeError("Please select a time code.");
+      return;
+    }
+
+    const selectedRateTypeSysId = mainSnRateTypeSelect.value || snConfig.defaultRateTypeSysId || "";
+    if (!selectedRateTypeSysId) {
+      showMainSnRateTypeError("Please select a rate type or set a default in Settings.");
       return;
     }
 
@@ -329,9 +403,7 @@ startButton.addEventListener("click", () => {
       taskData.snCategoryLabel = selectedAssignment.data.label || "";
       taskName = selectedAssignment.data.label || selectedAssignment.data.value || taskName;
       if (!snCommentText) {
-        clearTaskNameError();
-        showMainSnError("Extra notes are required when category is selected.");
-        mainSnNotesInput.classList.add("input-error");
+        showMainNotesError("Extra notes are required when category is selected.");
         return;
       }
       taskData.snCommentText = snCommentText;
@@ -342,6 +414,7 @@ startButton.addEventListener("click", () => {
     taskData.snCodeSysId = selectedCode.sys_id || "";
     taskData.snCodeValue = selectedCode.u_time_card_code || "";
     taskData.snCodeDescription = selectedCode.u_description || "";
+    taskData.snRateTypeSysId = selectedRateTypeSysId;
   }
 
   clearTaskNameError();
@@ -386,10 +459,12 @@ finishButton.addEventListener("click", () => {
       showRegistrationState();
       mainSnAssignmentInput.value = "";
       mainSnCodeSelect.value = "";
+      mainSnRateTypeSelect.value = "";
       mainSnNotesInput.value = "";
       clearTaskNameError();
       renderMainAssignmentOptions();
       renderMainCodeOptions();
+      renderMainRateTypeOptions(snConfig.defaultRateTypeSysId || "");
     }
   });
 });

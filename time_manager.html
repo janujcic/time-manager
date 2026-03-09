@@ -13,6 +13,7 @@
   <div class="tab-bar">
     <button id="dashboard-tab-button" class="tab-button active" type="button">Dashboard</button>
     <button id="servicenow-tab-button" class="tab-button" type="button">ServiceNow Sync</button>
+    <button id="settings-tab-button" class="tab-button" type="button">Settings</button>
   </div>
 
   <div class="dashboard-panel">
@@ -71,6 +72,7 @@
             <tr>
               <th>#</th>
               <th>Task Name</th>
+              <th>Extra notes</th>
               <th>Total Duration</th>
             </tr>
           </thead>
@@ -116,6 +118,7 @@
             <tr>
               <th>#</th>
               <th>Task Name</th>
+              <th>Extra notes</th>
               <th>Start</th>
               <th>End</th>
               <th>Duration</th>
@@ -176,6 +179,17 @@
         <p id="sn-sync-report" class="dashboard-status"></p>
       </section>
     </div>
+
+    <div id="settings-tab-content" class="tab-content">
+      <section class="dashboard-section">
+        <h3>Extension Settings</h3>
+        <div class="servicenow-controls">
+          <label for="sn-default-rate-type-select">Default Rate Type:</label>
+          <select id="sn-default-rate-type-select"></select>
+          <button id="sn-save-default-rate-type-button">Save</button>
+        </div>
+      </section>
+    </div>
   </div>
 
   <div id="add-log-modal" class="modal">
@@ -196,6 +210,10 @@
         <div class="task-time servicenow-select-wrap" id="sn-code-wrap">
           <label for="sn-code-select">Time Code:</label>
           <select id="sn-code-select"></select>
+        </div>
+        <div class="task-time servicenow-select-wrap" id="sn-rate-type-wrap">
+          <label for="sn-rate-type-select">Rate type:</label>
+          <select id="sn-rate-type-select"></select>
         </div>
         <div class="task-time servicenow-select-wrap" id="sn-comment-wrap">
           <label for="sn-comment-input">Extra notes:</label>

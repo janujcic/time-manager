@@ -13,6 +13,8 @@ const taskEndNowButton = document.getElementById("task-end-now-button");
 const taskDurationTimeInput = document.getElementById("task-duration-time");
 const snCodeWrap = document.getElementById("sn-code-wrap");
 const snCodeSelect = document.getElementById("sn-code-select");
+const snRateTypeWrap = document.getElementById("sn-rate-type-wrap");
+const snRateTypeSelect = document.getElementById("sn-rate-type-select");
 const snCommentWrap = document.getElementById("sn-comment-wrap");
 const snCommentInput = document.getElementById("sn-comment-input");
 const blockLogTableBody = document.querySelector("#block-log-table tbody");
@@ -32,7 +34,9 @@ const kpiBlockCount = document.getElementById("kpi-block-count");
 const kpiAvgBlock = document.getElementById("kpi-avg-block");
 const snEnabledInput = document.getElementById("sn-enabled");
 const snInstanceUrlInput = document.getElementById("sn-instance-url");
+const snDefaultRateTypeSelect = document.getElementById("sn-default-rate-type-select");
 const snSaveConfigButton = document.getElementById("sn-save-config-button");
+const snSaveDefaultRateTypeButton = document.getElementById("sn-save-default-rate-type-button");
 const snConnectButton = document.getElementById("sn-connect-button");
 const snRefreshLookupsButton = document.getElementById("sn-refresh-lookups-button");
 const snSyncButton = document.getElementById("sn-sync-button");
@@ -47,8 +51,10 @@ const snSyncReport = document.getElementById("sn-sync-report");
 const snConnectionBadge = document.getElementById("sn-connection-badge");
 const dashboardTabButton = document.getElementById("dashboard-tab-button");
 const serviceNowTabButton = document.getElementById("servicenow-tab-button");
+const settingsTabButton = document.getElementById("settings-tab-button");
 const dashboardTabContent = document.getElementById("dashboard-tab-content");
 const serviceNowTabContent = document.getElementById("servicenow-tab-content");
+const settingsTabContent = document.getElementById("settings-tab-content");
 const taskPagePrevButton = document.getElementById("task-page-prev");
 const taskPageNextButton = document.getElementById("task-page-next");
 const taskPageInfo = document.getElementById("task-page-info");
@@ -62,8 +68,8 @@ const timeBlocksContent = document.getElementById("time-blocks-content");
 let allBlocks = [];
 let filteredBlocks = [];
 let editingBlockId = null;
-let snConfig = { enabled: false, instanceUrl: "" };
-let snLookupCache = { fetchedAtMs: 0, tasks: [], categories: [], timeCodes: [] };
+let snConfig = { enabled: false, instanceUrl: "", defaultRateTypeSysId: "" };
+let snLookupCache = { fetchedAtMs: 0, tasks: [], categories: [], timeCodes: [], rateTypes: [] };
 let snConnectionState = { connected: false, code: "", message: "" };
 const TASK_PAGE_SIZE = 5;
 let currentTaskPage = 1;
@@ -97,6 +103,7 @@ function bindDashboardEvents() {
 
   blockLogTableBody.addEventListener("click", onBlockActionClick);
   snSaveConfigButton.addEventListener("click", saveServiceNowConfig);
+  snSaveDefaultRateTypeButton.addEventListener("click", saveDefaultRateTypeSetting);
   snConnectButton.addEventListener("click", connectServiceNowSession);
   snRefreshLookupsButton.addEventListener("click", fetchServiceNowLookups);
   snSyncButton.addEventListener("click", syncVisibleRangeToServiceNow);
@@ -127,6 +134,7 @@ function bindDashboardEvents() {
   });
   dashboardTabButton.addEventListener("click", () => setActiveTab("dashboard"));
   serviceNowTabButton.addEventListener("click", () => setActiveTab("servicenow"));
+  settingsTabButton.addEventListener("click", () => setActiveTab("settings"));
   taskPagePrevButton.addEventListener("click", () => {
     setTaskPage(currentTaskPage - 1);
   });
@@ -142,6 +150,7 @@ function bindDashboardEvents() {
   toggleBlocksButton.addEventListener("click", toggleTimeBlocksVisibility);
   taskNameInput.addEventListener("input", onTaskNameInputChanged);
   snCodeSelect.addEventListener("change", clearManualInputBorders);
+  snRateTypeSelect.addEventListener("change", clearManualInputBorders);
   snCommentInput.addEventListener("input", clearManualInputBorders);
   taskStartDateInput.addEventListener("input", onStartDateTimeChanged);
   taskStartTimeInput.addEventListener("input", onStartDateTimeChanged);
@@ -154,10 +163,16 @@ function bindDashboardEvents() {
 
 function setActiveTab(tabName) {
   const showDashboard = tabName === "dashboard";
+  const showServiceNow = tabName === "servicenow";
+  const showSettings = tabName === "settings";
+
   dashboardTabButton.classList.toggle("active", showDashboard);
-  serviceNowTabButton.classList.toggle("active", !showDashboard);
+  serviceNowTabButton.classList.toggle("active", showServiceNow);
+  settingsTabButton.classList.toggle("active", showSettings);
+
   dashboardTabContent.classList.toggle("active", showDashboard);
-  serviceNowTabContent.classList.toggle("active", !showDashboard);
+  serviceNowTabContent.classList.toggle("active", showServiceNow);
+  settingsTabContent.classList.toggle("active", showSettings);
 }
 
 function setSnStatus(message) {
@@ -171,6 +186,7 @@ function setSnSyncReport(message) {
 function updateServiceNowUiVisibility() {
   const visible = Boolean(snConfig.enabled);
   snCodeWrap.style.display = visible ? "flex" : "none";
+  snRateTypeWrap.style.display = visible ? "flex" : "none";
   snCommentWrap.style.display = visible ? "flex" : "none";
   snSyncButton.style.display = visible ? "inline-block" : "none";
   updateServiceNowActionStates();
@@ -360,6 +376,67 @@ function renderCodeOptions(selectedCodeSysId = "") {
   }
 }
 
+function renderRateTypeOptions(selectedRateTypeSysId = "") {
+  const rateTypes = Array.isArray(snLookupCache.rateTypes) ? [...snLookupCache.rateTypes] : [];
+  rateTypes.sort((a, b) =>
+    String(a?.name || "").localeCompare(String(b?.name || ""), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    })
+  );
+
+  snRateTypeSelect.innerHTML = "";
+  if (rateTypes.length === 0) {
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "No rate types available";
+    snRateTypeSelect.appendChild(placeholder);
+  } else if (!selectedRateTypeSysId) {
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Select rate type";
+    snRateTypeSelect.appendChild(placeholder);
+  }
+
+  rateTypes.forEach((rateType) => {
+    const option = document.createElement("option");
+    option.value = rateType.sys_id;
+    option.textContent = rateType.label || rateType.name || rateType.sys_id;
+    snRateTypeSelect.appendChild(option);
+  });
+
+  if (selectedRateTypeSysId) {
+    snRateTypeSelect.value = selectedRateTypeSysId;
+  }
+}
+
+function renderDefaultRateTypeOptions(selectedRateTypeSysId = "") {
+  const rateTypes = Array.isArray(snLookupCache.rateTypes) ? [...snLookupCache.rateTypes] : [];
+  rateTypes.sort((a, b) =>
+    String(a?.name || "").localeCompare(String(b?.name || ""), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    })
+  );
+
+  snDefaultRateTypeSelect.innerHTML = "";
+  const noneOption = document.createElement("option");
+  noneOption.value = "";
+  noneOption.textContent = "No default rate type";
+  snDefaultRateTypeSelect.appendChild(noneOption);
+
+  rateTypes.forEach((rateType) => {
+    const option = document.createElement("option");
+    option.value = rateType.sys_id;
+    option.textContent = rateType.label || rateType.name || rateType.sys_id;
+    snDefaultRateTypeSelect.appendChild(option);
+  });
+
+  if (selectedRateTypeSysId) {
+    snDefaultRateTypeSelect.value = selectedRateTypeSysId;
+  }
+}
+
 function refreshServiceNowLookupsFromCache() {
   chrome.runtime.sendMessage({ action: "servicenow/getCachedLookups" }, (response) => {
     if (response?.status === "success") {
@@ -368,9 +445,12 @@ function refreshServiceNowLookupsFromCache() {
         tasks: [],
         categories: [],
         timeCodes: [],
+        rateTypes: [],
       };
       renderAssignmentOptions();
       renderCodeOptions();
+      renderRateTypeOptions(snConfig.defaultRateTypeSysId || "");
+      renderDefaultRateTypeOptions(snConfig.defaultRateTypeSysId || "");
     }
   });
 }
@@ -424,9 +504,11 @@ function getSelectedCode() {
 function loadServiceNowConfig() {
   chrome.runtime.sendMessage({ action: "servicenow/getConfig" }, (response) => {
     if (response?.status === "success") {
-      snConfig = response.data || { enabled: false, instanceUrl: "" };
+      snConfig = response.data || { enabled: false, instanceUrl: "", defaultRateTypeSysId: "" };
+      snConfig.defaultRateTypeSysId = snConfig.defaultRateTypeSysId || "";
       snEnabledInput.checked = Boolean(snConfig.enabled);
       snInstanceUrlInput.value = snConfig.instanceUrl || "";
+      renderDefaultRateTypeOptions(snConfig.defaultRateTypeSysId);
       setSnConnectionState({ connected: false, code: "", message: "" });
       updateServiceNowUiVisibility();
       updateSyncRangePreview();
@@ -434,10 +516,11 @@ function loadServiceNowConfig() {
   });
 }
 
-function saveServiceNowConfig() {
+function saveServiceNowConfigWithStatus(successMessage) {
   const config = {
     enabled: snEnabledInput.checked,
     instanceUrl: snInstanceUrlInput.value.trim(),
+    defaultRateTypeSysId: snDefaultRateTypeSelect.value || "",
   };
 
   chrome.runtime.sendMessage({ action: "servicenow/saveConfig", config }, (response) => {
@@ -447,10 +530,21 @@ function saveServiceNowConfig() {
     }
 
     snConfig = response.data;
+    snConfig.defaultRateTypeSysId = snConfig.defaultRateTypeSysId || "";
     setSnConnectionState({ connected: false, code: "", message: "" });
+    renderRateTypeOptions(snConfig.defaultRateTypeSysId || "");
+    renderDefaultRateTypeOptions(snConfig.defaultRateTypeSysId || "");
     updateServiceNowUiVisibility();
-    setSnStatus("ServiceNow configuration saved. Click Connect ServiceNow.");
+    setSnStatus(successMessage);
   });
+}
+
+function saveServiceNowConfig() {
+  saveServiceNowConfigWithStatus("ServiceNow configuration saved. Click Connect ServiceNow.");
+}
+
+function saveDefaultRateTypeSetting() {
+  saveServiceNowConfigWithStatus("Default rate type saved.");
 }
 
 function handleConnectResponse(response) {
@@ -544,16 +638,25 @@ function fetchServiceNowLookups() {
       setSnStatus(response?.message || "Failed to fetch ServiceNow data.");
       return;
     }
-    snLookupCache = response.data || { fetchedAtMs: 0, tasks: [], categories: [], timeCodes: [] };
+    snLookupCache = response.data || {
+      fetchedAtMs: 0,
+      tasks: [],
+      categories: [],
+      timeCodes: [],
+      rateTypes: [],
+    };
     renderAssignmentOptions();
     renderCodeOptions();
+    renderRateTypeOptions(snConfig.defaultRateTypeSysId || "");
+    renderDefaultRateTypeOptions(snConfig.defaultRateTypeSysId || "");
     const taskCount = snLookupCache.tasks?.length || 0;
     const categoryCount = (snLookupCache.categories || []).filter(
       (category) => category.value !== "task_work"
     ).length;
     const codeCount = snLookupCache.timeCodes?.length || 0;
+    const rateTypeCount = snLookupCache.rateTypes?.length || 0;
     setSnStatus(
-      `Fetched ${taskCount} tasks, ${categoryCount} categories, and ${codeCount} time codes.`
+      `Fetched ${taskCount} tasks, ${categoryCount} categories, ${codeCount} time codes, and ${rateTypeCount} rate types.`
     );
   });
 }
@@ -885,16 +988,20 @@ function aggregateBlocksByTask(blocks) {
   const grouped = new Map();
 
   for (const block of blocks) {
-    if (!grouped.has(block.task)) {
-      grouped.set(block.task, {
-        task: block.task,
+    const task = String(block.task || "");
+    const extraNotes = String(block.snCommentText || "").trim();
+    const groupKey = JSON.stringify([task, extraNotes]);
+    if (!grouped.has(groupKey)) {
+      grouped.set(groupKey, {
+        task,
+        extraNotes,
         duration: 0,
         blockCount: 0,
         lastSavedMs: 0,
       });
     }
 
-    const current = grouped.get(block.task);
+    const current = grouped.get(groupKey);
     current.duration += block.durationMs;
     current.blockCount += 1;
     current.lastSavedMs = Math.max(current.lastSavedMs, block.endMs);
@@ -952,7 +1059,7 @@ function renderTaskTable() {
   if (taskRows.length === 0) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 3;
+    cell.colSpan = 4;
     cell.textContent = "No task data for selected range.";
     row.appendChild(cell);
     tableBody.appendChild(row);
@@ -966,6 +1073,7 @@ function renderTaskTable() {
     row.innerHTML = `
       <td>${startIndex + index + 1}</td>
       <td>${taskRow.task}</td>
+      <td>${taskRow.extraNotes || ""}</td>
       <td>${transformMilisecondsToTime(taskRow.duration)}</td>
     `;
     tableBody.appendChild(row);
@@ -1011,7 +1119,7 @@ function renderBlockTable() {
   if (rows.length === 0) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 7;
+    cell.colSpan = 8;
     cell.textContent = "No time blocks for selected range.";
     row.appendChild(cell);
     tableBody.appendChild(row);
@@ -1034,6 +1142,7 @@ function renderBlockTable() {
     row.innerHTML = `
       <td>${startIndex + index + 1}</td>
       <td>${block.task}</td>
+      <td>${String(block.snCommentText || "").trim()}</td>
       <td>${formatDateTime(block.startMs)}</td>
       <td>${formatDateTime(block.endMs)}</td>
       <td>${transformMilisecondsToTime(block.durationMs)}</td>
@@ -1095,6 +1204,7 @@ function clearManualInputBorders() {
   taskEndTimeInput.classList.remove("input-error");
   taskDurationTimeInput.classList.remove("input-error");
   snCodeSelect.classList.remove("input-error");
+  snRateTypeSelect.classList.remove("input-error");
   snCommentInput.classList.remove("input-error");
 }
 
@@ -1201,6 +1311,7 @@ function resetManualForm() {
   snCommentInput.value = "";
   renderAssignmentOptions();
   renderCodeOptions();
+  renderRateTypeOptions(snConfig.defaultRateTypeSysId || "");
   editingBlockId = null;
   addLogModalTitle.textContent = "Add time block";
   saveLogButton.textContent = "Save Block";
@@ -1242,6 +1353,7 @@ function openEditBlockModal(blockId) {
   setDurationFromMs(block.durationMs);
   renderAssignmentOptions(taskNameInput.value);
   renderCodeOptions(block.snCodeSysId || "");
+  renderRateTypeOptions(block.snRateTypeSysId || snConfig.defaultRateTypeSysId || "");
   snCommentInput.value = block.snCommentText || "";
   clearManualMessages();
   clearManualInputBorders();
@@ -1337,6 +1449,13 @@ saveLogButton.addEventListener("click", () => {
       return;
     }
 
+    const selectedRateTypeSysId = snRateTypeSelect.value || snConfig.defaultRateTypeSysId || "";
+    if (!selectedRateTypeSysId) {
+      snRateTypeSelect.classList.add("input-error");
+      setManualError("Please select a rate type or set a default in Settings.");
+      return;
+    }
+
     if (selectedAssignment?.kind === "task") {
       payload.snSelectionType = "task";
       payload.snTaskSysId = selectedAssignment.data.sys_id || "";
@@ -1368,6 +1487,7 @@ saveLogButton.addEventListener("click", () => {
     payload.snCodeSysId = selectedCode.sys_id || "";
     payload.snCodeValue = selectedCode.u_time_card_code || "";
     payload.snCodeDescription = selectedCode.u_description || "";
+    payload.snRateTypeSysId = selectedRateTypeSysId;
   }
 
   payload.taskName = taskName;
