@@ -8,6 +8,7 @@ const DEFAULT_SN_CONFIG = {
   enabled: false,
   instanceUrl: "",
   defaultRateTypeSysId: "",
+  notesSuggestionWeeks: 4,
 };
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEKDAY_FIELDS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -65,11 +66,20 @@ async function initializeStorage() {
   }
   if (!result[SN_CONFIG_KEY] || typeof result[SN_CONFIG_KEY] !== "object") {
     updatePayload[SN_CONFIG_KEY] = { ...DEFAULT_SN_CONFIG };
-  } else if (!Object.prototype.hasOwnProperty.call(result[SN_CONFIG_KEY], "defaultRateTypeSysId")) {
-    updatePayload[SN_CONFIG_KEY] = {
-      ...result[SN_CONFIG_KEY],
-      defaultRateTypeSysId: "",
-    };
+  } else {
+    const configPatch = {};
+    if (!Object.prototype.hasOwnProperty.call(result[SN_CONFIG_KEY], "defaultRateTypeSysId")) {
+      configPatch.defaultRateTypeSysId = "";
+    }
+    if (!Object.prototype.hasOwnProperty.call(result[SN_CONFIG_KEY], "notesSuggestionWeeks")) {
+      configPatch.notesSuggestionWeeks = 4;
+    }
+    if (Object.keys(configPatch).length > 0) {
+      updatePayload[SN_CONFIG_KEY] = {
+        ...result[SN_CONFIG_KEY],
+        ...configPatch,
+      };
+    }
   }
   if (!result[SN_LOOKUP_CACHE_KEY] || typeof result[SN_LOOKUP_CACHE_KEY] !== "object") {
     updatePayload[SN_LOOKUP_CACHE_KEY] = {
@@ -192,6 +202,14 @@ function normalizeInstanceUrl(rawUrl) {
 
 function readString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeNotesSuggestionWeeks(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 4;
+  }
+  return Math.min(52, Math.max(1, Math.floor(numeric)));
 }
 
 function truncateText(text, maxLength) {
@@ -1031,6 +1049,7 @@ async function getServiceNowConfig() {
     enabled: Boolean(config.enabled),
     instanceUrl: config.instanceUrl || "",
     defaultRateTypeSysId: readString(config.defaultRateTypeSysId),
+    notesSuggestionWeeks: normalizeNotesSuggestionWeeks(config.notesSuggestionWeeks),
   };
 }
 
@@ -1051,6 +1070,7 @@ async function saveServiceNowConfig(configInput) {
     enabled,
     instanceUrl: instanceUrl || "",
     defaultRateTypeSysId: readString(configInput?.defaultRateTypeSysId),
+    notesSuggestionWeeks: normalizeNotesSuggestionWeeks(configInput?.notesSuggestionWeeks),
   };
 
   await storageSet({ [SN_CONFIG_KEY]: config });
