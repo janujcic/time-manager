@@ -7,6 +7,7 @@ const DEPRECATED_STORAGE_KEYS = ["timeSessions", "sn_timecards_cache", "sn_last_
 const DEFAULT_SN_CONFIG = {
   enabled: false,
   instanceUrl: "",
+  defaultRateTypeSysId: "",
 };
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEKDAY_FIELDS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -33,6 +34,7 @@ function createDefaultTimerData() {
     snCodeValue: "",
     snCodeDescription: "",
     snCommentText: "",
+    snRateTypeSysId: "",
   };
 }
 
@@ -63,6 +65,11 @@ async function initializeStorage() {
   }
   if (!result[SN_CONFIG_KEY] || typeof result[SN_CONFIG_KEY] !== "object") {
     updatePayload[SN_CONFIG_KEY] = { ...DEFAULT_SN_CONFIG };
+  } else if (!Object.prototype.hasOwnProperty.call(result[SN_CONFIG_KEY], "defaultRateTypeSysId")) {
+    updatePayload[SN_CONFIG_KEY] = {
+      ...result[SN_CONFIG_KEY],
+      defaultRateTypeSysId: "",
+    };
   }
   if (!result[SN_LOOKUP_CACHE_KEY] || typeof result[SN_LOOKUP_CACHE_KEY] !== "object") {
     updatePayload[SN_LOOKUP_CACHE_KEY] = {
@@ -70,6 +77,12 @@ async function initializeStorage() {
       tasks: [],
       categories: [],
       timeCodes: [],
+      rateTypes: [],
+    };
+  } else if (!Array.isArray(result[SN_LOOKUP_CACHE_KEY].rateTypes)) {
+    updatePayload[SN_LOOKUP_CACHE_KEY] = {
+      ...result[SN_LOOKUP_CACHE_KEY],
+      rateTypes: [],
     };
   }
   if (Object.keys(updatePayload).length > 0) {
@@ -281,6 +294,7 @@ function normalizeServiceNowMetadata(taskData = {}) {
   const snCodeValue = readString(taskData.snCodeValue);
   const snCodeDescription = readString(taskData.snCodeDescription);
   const snCommentText = readString(taskData.snCommentText);
+  const snRateTypeSysId = readString(taskData.snRateTypeSysId);
 
   if (snSelectionType !== "task" && snSelectionType !== "category") {
     if (snTaskSysId) {
@@ -305,6 +319,7 @@ function normalizeServiceNowMetadata(taskData = {}) {
       snCodeValue,
       snCodeDescription,
       snCommentText,
+      snRateTypeSysId,
     };
   }
 
@@ -321,6 +336,7 @@ function normalizeServiceNowMetadata(taskData = {}) {
       snCodeValue,
       snCodeDescription,
       snCommentText,
+      snRateTypeSysId,
     };
   }
 
@@ -336,6 +352,7 @@ function normalizeServiceNowMetadata(taskData = {}) {
     snCodeValue: "",
     snCodeDescription: "",
     snCommentText,
+    snRateTypeSysId,
   };
 }
 
@@ -596,7 +613,8 @@ async function startTimer(taskName, taskData = {}) {
       (taskData.snSelectionType ||
         taskData.snTaskSysId ||
         taskData.snCategorySysId ||
-        taskData.snCodeSysId)
+        taskData.snCodeSysId ||
+        taskData.snRateTypeSysId)
   );
   const candidateMetadata = hasIncomingMetadata
     ? taskData
@@ -613,6 +631,7 @@ async function startTimer(taskName, taskData = {}) {
           snCodeValue: timerData.snCodeValue,
           snCodeDescription: timerData.snCodeDescription,
           snCommentText: timerData.snCommentText,
+          snRateTypeSysId: timerData.snRateTypeSysId,
         }
       : {};
 
@@ -670,6 +689,7 @@ async function stopTimer() {
       snCodeValue: timerData.snCodeValue,
       snCodeDescription: timerData.snCodeDescription,
       snCommentText: timerData.snCommentText,
+      snRateTypeSysId: timerData.snRateTypeSysId,
     }
   );
   await appendTimeBlock(newBlock);
@@ -827,7 +847,13 @@ function buildSyncGroupKey(block, weekStartDate) {
       : selectionType === "category"
         ? `category:${block.snCategorySysId || block.snCategoryValue || ""}`
         : "none";
-  return `${weekStartDate}|${selectionType}|${selectionKey}|${block.snCodeSysId || ""}`;
+  const categoryCommentKey =
+    selectionType === "category"
+      ? encodeURIComponent(String(block.snCommentText || "").trim())
+      : "";
+  return `${weekStartDate}|${selectionType}|${selectionKey}|${block.snCodeSysId || ""}|${
+    block.snRateTypeSysId || ""
+  }|${categoryCommentKey}`;
 }
 
 function aggregateBlocksForSync(blocks, blockIds = []) {
@@ -886,6 +912,8 @@ function aggregateBlocksForSync(blocks, blockIds = []) {
           snCodeSysId: block.snCodeSysId || "",
           snCodeValue: block.snCodeValue || "",
           snCodeDescription: block.snCodeDescription || "",
+          snRateTypeSysId: block.snRateTypeSysId || "",
+          snCommentText: String(block.snCommentText || "").trim(),
           dayHours: {
             monday: 0,
             tuesday: 0,
@@ -1002,6 +1030,7 @@ async function getServiceNowConfig() {
   return {
     enabled: Boolean(config.enabled),
     instanceUrl: config.instanceUrl || "",
+    defaultRateTypeSysId: readString(config.defaultRateTypeSysId),
   };
 }
 
@@ -1021,6 +1050,7 @@ async function saveServiceNowConfig(configInput) {
   const config = {
     enabled,
     instanceUrl: instanceUrl || "",
+    defaultRateTypeSysId: readString(configInput?.defaultRateTypeSysId),
   };
 
   await storageSet({ [SN_CONFIG_KEY]: config });
@@ -1250,6 +1280,12 @@ function compareTimeCodes(a, b) {
   return descA.localeCompare(descB, undefined, { numeric: true, sensitivity: "base" });
 }
 
+function compareRateTypes(a, b) {
+  const nameA = String(a?.name || "").toLowerCase();
+  const nameB = String(b?.name || "").toLowerCase();
+  return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: "base" });
+}
+
 async function serviceNowCheckSession() {
   return connectServiceNowSession();
 }
@@ -1316,11 +1352,26 @@ async function serviceNowFetchLookups() {
         .sort(compareTimeCodes)
     : [];
 
+  const rateTypes = Array.isArray(pageResponse.data?.rateTypes)
+    ? pageResponse.data.rateTypes
+        .map((item) => {
+          const nameValue = String(readDisplayValue(item.name) || "");
+          return {
+            sys_id: readDisplayValue(item.sys_id),
+            name: nameValue,
+            label: nameValue,
+          };
+        })
+        .filter((item) => item.sys_id && item.name)
+        .sort(compareRateTypes)
+    : [];
+
   const cache = {
     fetchedAtMs: Date.now(),
     tasks,
     categories,
     timeCodes,
+    rateTypes,
   };
 
   await storageSet({ [SN_LOOKUP_CACHE_KEY]: cache });
@@ -1334,6 +1385,7 @@ async function getCachedLookups() {
     tasks: [],
     categories: [],
     timeCodes: [],
+    rateTypes: [],
   };
 
   return {
@@ -1341,6 +1393,7 @@ async function getCachedLookups() {
     tasks: Array.isArray(cache.tasks) ? cache.tasks : [],
     categories: Array.isArray(cache.categories) ? cache.categories : [],
     timeCodes: Array.isArray(cache.timeCodes) ? [...cache.timeCodes].sort(compareTimeCodes) : [],
+    rateTypes: Array.isArray(cache.rateTypes) ? [...cache.rateTypes].sort(compareRateTypes) : [],
   };
 }
 
@@ -1418,6 +1471,7 @@ async function serviceNowSyncVisibleBlocks(requestData = {}) {
   }
 
   const allBlocks = await getTimeBlocks();
+  const snConfig = await getServiceNowConfig();
   const aggregation = aggregateBlocksForSync(allBlocks, blockIds);
   const report = createSyncReportSkeleton(rangePreset, aggregation);
   if (aggregation.groups.length === 0) {
@@ -1431,6 +1485,7 @@ async function serviceNowSyncVisibleBlocks(requestData = {}) {
     {
       userId: connectResponse.data.userId || lastConnectedSnUserId || "",
       groups: aggregation.groups,
+      defaultRateTypeSysId: readString(snConfig.defaultRateTypeSysId),
     }
   );
   if (bridgeResponse.status !== "success") {

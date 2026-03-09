@@ -269,11 +269,15 @@
       "/api/now/table/u_time_card_codes?sysparm_display_value=all&sysparm_exclude_reference_link=true" +
       "&sysparm_limit=500&sysparm_fields=sys_id,u_time_card_code,u_description,u_user" +
       `&sysparm_query=${encodeURIComponent(timeCodeQuery)}`;
+    const rateTypeEndpoint =
+      "/api/now/table/rate_type?sysparm_display_value=all&sysparm_exclude_reference_link=true" +
+      "&sysparm_limit=500&sysparm_fields=sys_id,name,inactive";
 
-    const [taskRows, categoryRows, timeCodeRows] = await Promise.all([
+    const [taskRows, categoryRows, timeCodeRows, rateTypeRows] = await Promise.all([
       fetchTable(taskEndpoint),
       fetchTable(categoryEndpoint),
       fetchTable(timeCodeEndpoint),
+      fetchTable(rateTypeEndpoint),
     ]);
 
     const tasks = taskRows
@@ -304,7 +308,17 @@
       }))
       .filter((item) => item.sys_id && item.u_time_card_code);
 
-    return { tasks, categories, timeCodes };
+    const rateTypes = rateTypeRows
+      .map((item) => ({
+        sys_id: readDisplayValue(item.sys_id),
+        name: String(readDisplayValue(item.name) || ""),
+        inactive: String(readValue(item.inactive) || "").toLowerCase(),
+      }))
+      .filter((item) => item.sys_id && item.name)
+      .filter((item) => item.inactive !== "true" && item.inactive !== "1")
+      .map((item) => ({ sys_id: item.sys_id, name: item.name }));
+
+    return { tasks, categories, timeCodes, rateTypes };
   }
 
   function toHours(value) {
@@ -326,8 +340,20 @@
     return String(readValue(row?.sys_id) || readDisplayValue(row?.sys_id) || "").trim();
   }
 
-  function buildTimeCardPayload(group, userId) {
+  function buildGroupCommentsText(group) {
+    return Array.isArray(group.comments)
+      ? Array.from(new Set(group.comments.map((item) => String(item || "").trim()).filter(Boolean))).join("\n")
+      : "";
+  }
+
+  function escapeQueryValue(value) {
+    return String(value || "").replace(/\^/g, "^^");
+  }
+
+  function buildTimeCardPayload(group, userId, defaultRateTypeSysId = "") {
     const dayHours = group.dayHours || {};
+    const selectedRateTypeSysId = String(group.snRateTypeSysId || defaultRateTypeSysId || "");
+    const commentsText = buildGroupCommentsText(group);
     const payload = {
       monday: toHours(dayHours.monday),
       tuesday: toHours(dayHours.tuesday),
@@ -337,15 +363,14 @@
       saturday: toHours(dayHours.saturday),
       sunday: toHours(dayHours.sunday),
       total: toHours(group.totalHours),
-      comments: Array.isArray(group.comments)
-        ? Array.from(new Set(group.comments.map((item) => String(item || "").trim()).filter(Boolean))).join(
-            "\n"
-          )
-        : "",
+      comments: commentsText,
       week_starts_on: String(group.weekStartDate || ""),
       user: userId,
       u_time_card_code: String(group.snCodeSysId || ""),
     };
+    if (selectedRateTypeSysId) {
+      payload.rate_type = selectedRateTypeSysId;
+    }
 
     if (group.snSelectionType === "task") {
       payload.task = String(group.snTaskSysId || "");
@@ -364,12 +389,19 @@
       `week_starts_on=${group.weekStartDate}`,
       `u_time_card_code=${group.snCodeSysId}`,
     ];
+    if (group.snRateTypeSysId) {
+      baseQueryParts.push(`rate_type=${group.snRateTypeSysId}`);
+    } else {
+      baseQueryParts.push("rate_typeISEMPTY");
+    }
     if (group.snSelectionType === "task") {
       baseQueryParts.push(`task=${group.snTaskSysId}`);
       baseQueryParts.push("category=task_work");
     } else {
       baseQueryParts.push("taskISEMPTY");
       baseQueryParts.push(`category=${group.snCategoryValue}`);
+      const commentsText = buildGroupCommentsText(group);
+      baseQueryParts.push(`comments=${escapeQueryValue(commentsText)}`);
     }
     baseQueryParts.push("ORDERBYDESCsys_updated_on");
 
@@ -402,7 +434,7 @@
     return defaults;
   }
 
-  async function upsertTimeCardGroup(group, userId, weekDefaultsCache) {
+  async function upsertTimeCardGroup(group, userId, weekDefaultsCache, defaultRateTypeSysId = "") {
     const endpoint = buildMatchingCardsEndpoint(group, userId);
     const existingCards = await fetchTable(endpoint);
     const editableCards = existingCards.filter((row) => !isSubmittedState(row));
@@ -417,7 +449,7 @@
       };
     }
 
-    const payload = buildTimeCardPayload(group, userId);
+    const payload = buildTimeCardPayload(group, userId, defaultRateTypeSysId);
     if (editableCards.length > 0) {
       const targetCard = editableCards[0];
       const targetSysId = getTimeCardSysId(targetCard);
@@ -452,7 +484,7 @@
     if (defaults.timeSheetSysId) {
       payload.time_sheet = defaults.timeSheetSysId;
     }
-    if (defaults.rateTypeSysId) {
+    if (!payload.rate_type && defaults.rateTypeSysId) {
       payload.rate_type = defaults.rateTypeSysId;
     }
 
@@ -482,6 +514,8 @@
       snTaskSysId: String(group.snTaskSysId || ""),
       snCategoryValue: String(group.snCategoryValue || ""),
       snCodeSysId: String(group.snCodeSysId || ""),
+      snRateTypeSysId: String(group.snRateTypeSysId || ""),
+      snCommentText: String(group.snCommentText || ""),
       dayHours: {
         monday: toHours(dayHours.monday),
         tuesday: toHours(dayHours.tuesday),
@@ -498,6 +532,7 @@
 
   async function syncTimeCards(payload = {}) {
     const groups = Array.isArray(payload.groups) ? payload.groups : [];
+    const defaultRateTypeSysId = String(payload.defaultRateTypeSysId || "");
     let userId = String(payload.userId || "");
     if (!userId) {
       const sessionUser = await resolveSessionUser();
@@ -554,7 +589,12 @@
       }
 
       try {
-        const upsertResult = await upsertTimeCardGroup(group, userId, weekDefaultsCache);
+        const upsertResult = await upsertTimeCardGroup(
+          group,
+          userId,
+          weekDefaultsCache,
+          defaultRateTypeSysId
+        );
         results.push({
           groupKey: group.groupKey,
           weekStartDate: group.weekStartDate,
