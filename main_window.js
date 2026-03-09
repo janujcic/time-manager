@@ -1,6 +1,7 @@
 let currentTaskName = "";
-let snConfig = { enabled: false, instanceUrl: "", defaultRateTypeSysId: "" };
+let snConfig = { enabled: false, instanceUrl: "", defaultRateTypeSysId: "", notesSuggestionWeeks: 4 };
 let snLookupCache = { fetchedAtMs: 0, tasks: [], categories: [], timeCodes: [], rateTypes: [] };
+let mainAllBlocks = [];
 
 const taskNameError = document.getElementById("task-name-error");
 const enterStartTask = document.querySelector(".enter-start-task");
@@ -24,6 +25,7 @@ const mainSnRateTypeSelect = document.getElementById("main-sn-rate-type-select")
 const mainSnRateTypeError = document.getElementById("main-sn-rate-type-error");
 const mainSnNotesWrap = document.getElementById("main-sn-notes-wrap");
 const mainSnNotesInput = document.getElementById("main-sn-notes-input");
+const mainSnNotesSuggestionList = document.getElementById("main-sn-notes-suggestion-list");
 const mainSnNotesError = document.getElementById("main-sn-notes-error");
 
 function showTaskNameError(message) {
@@ -66,6 +68,14 @@ function clearMainSnError() {
   mainSnNotesError.textContent = "";
   mainSnRateTypeError.textContent = "";
   taskNameError.textContent = "";
+}
+
+function normalizeNotesSuggestionWeeks(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 4;
+  }
+  return Math.min(52, Math.max(1, Math.floor(numeric)));
 }
 
 function transformMilisecondsToTime(miliseconds) {
@@ -112,6 +122,7 @@ function showRegistrationState() {
   currentTaskName = "";
   mainSnNotesInput.value = "";
   renderMainRateTypeOptions(snConfig.defaultRateTypeSysId || "");
+  refreshMainCommentSuggestions();
   clearMainSnError();
 }
 
@@ -250,6 +261,107 @@ function getSelectedAssignment() {
   return getAllAssignmentOptions().find((item) => item.label === typedValue) || null;
 }
 
+function getCategoryKeyFromAssignment(assignment) {
+  if (!assignment || assignment.kind !== "category") {
+    return "";
+  }
+  const sysId = String(assignment.data?.sys_id || "").trim();
+  if (sysId) {
+    return `sys:${sysId}`;
+  }
+  const categoryValue = String(assignment.data?.value || "").trim();
+  return categoryValue ? `value:${categoryValue}` : "";
+}
+
+function getCategoryKeyFromBlock(block) {
+  if (!block || block.snSelectionType !== "category") {
+    return "";
+  }
+  const sysId = String(block.snCategorySysId || "").trim();
+  if (sysId) {
+    return `sys:${sysId}`;
+  }
+  const categoryValue = String(block.snCategoryValue || "").trim();
+  return categoryValue ? `value:${categoryValue}` : "";
+}
+
+function buildCategoryNoteSuggestions(blocks, categoryKey, queryText, weeks) {
+  if (!categoryKey) {
+    return [];
+  }
+
+  const normalizedQuery = String(queryText || "").trim().toLowerCase();
+  const cutoffMs = Date.now() - normalizeNotesSuggestionWeeks(weeks) * 7 * 24 * 60 * 60 * 1000;
+  const dedupeByText = new Map();
+
+  for (const block of Array.isArray(blocks) ? blocks : []) {
+    if (getCategoryKeyFromBlock(block) !== categoryKey) {
+      continue;
+    }
+    const blockStartMs = Number(block.startMs);
+    if (!Number.isFinite(blockStartMs) || blockStartMs < cutoffMs) {
+      continue;
+    }
+    const note = String(block.snCommentText || "").trim();
+    if (!note) {
+      continue;
+    }
+    if (normalizedQuery && !note.toLowerCase().includes(normalizedQuery)) {
+      continue;
+    }
+
+    const dedupeKey = note.toLowerCase();
+    const existing = dedupeByText.get(dedupeKey);
+    if (!existing || blockStartMs > existing.lastUsedMs) {
+      dedupeByText.set(dedupeKey, { text: note, lastUsedMs: blockStartMs });
+    }
+  }
+
+  return Array.from(dedupeByText.values())
+    .sort((a, b) => b.lastUsedMs - a.lastUsedMs || a.text.localeCompare(b.text))
+    .map((item) => item.text);
+}
+
+function renderMainCommentSuggestions(suggestions) {
+  if (!mainSnNotesSuggestionList) {
+    return;
+  }
+  mainSnNotesSuggestionList.innerHTML = "";
+  for (const suggestion of suggestions) {
+    const option = document.createElement("option");
+    option.value = suggestion;
+    mainSnNotesSuggestionList.appendChild(option);
+  }
+}
+
+function refreshMainCommentSuggestions() {
+  const selectedAssignment = getSelectedAssignment();
+  const categoryKey = getCategoryKeyFromAssignment(selectedAssignment);
+  if (!categoryKey) {
+    renderMainCommentSuggestions([]);
+    return;
+  }
+
+  const suggestions = buildCategoryNoteSuggestions(
+    mainAllBlocks,
+    categoryKey,
+    mainSnNotesInput.value,
+    snConfig.notesSuggestionWeeks
+  );
+  renderMainCommentSuggestions(suggestions);
+}
+
+function loadMainBlocksForSuggestions() {
+  chrome.runtime.sendMessage({ action: "getTimeBlocks" }, (response) => {
+    if (response?.status === "success") {
+      mainAllBlocks = Array.isArray(response.data) ? response.data : [];
+    } else {
+      mainAllBlocks = [];
+    }
+    refreshMainCommentSuggestions();
+  });
+}
+
 function getSelectedCodeData() {
   const selectedCodeSysId = mainSnCodeSelect.value;
   if (!selectedCodeSysId) {
@@ -283,10 +395,17 @@ function getAssignmentLabelFromTimerData(timerData) {
 function loadMainSnConfigAndLookups() {
   chrome.runtime.sendMessage({ action: "servicenow/getConfig" }, (configResponse) => {
     if (configResponse?.status === "success") {
-      snConfig = configResponse.data || { enabled: false, instanceUrl: "", defaultRateTypeSysId: "" };
+      snConfig = configResponse.data || {
+        enabled: false,
+        instanceUrl: "",
+        defaultRateTypeSysId: "",
+        notesSuggestionWeeks: 4,
+      };
       snConfig.defaultRateTypeSysId = snConfig.defaultRateTypeSysId || "";
+      snConfig.notesSuggestionWeeks = normalizeNotesSuggestionWeeks(snConfig.notesSuggestionWeeks);
       updateMainSnVisibility();
       renderMainRateTypeOptions(snConfig.defaultRateTypeSysId);
+      refreshMainCommentSuggestions();
     }
   });
 
@@ -302,6 +421,7 @@ function loadMainSnConfigAndLookups() {
       renderMainAssignmentOptions();
       renderMainCodeOptions();
       renderMainRateTypeOptions(snConfig.defaultRateTypeSysId || "");
+      refreshMainCommentSuggestions();
     }
   });
 }
@@ -322,6 +442,7 @@ function refreshFromBackground() {
     renderMainAssignmentOptions(getAssignmentLabelFromTimerData(timerData));
     renderMainCodeOptions(timerData.snCodeSysId || "");
     renderMainRateTypeOptions(timerData.snRateTypeSysId || snConfig.defaultRateTypeSysId || "");
+    refreshMainCommentSuggestions();
 
     if (currentTaskName) {
       showRunningState(Boolean(timerData.isRunning));
@@ -333,12 +454,14 @@ function refreshFromBackground() {
 
 document.addEventListener("DOMContentLoaded", () => {
   loadMainSnConfigAndLookups();
+  loadMainBlocksForSuggestions();
   mainSnAssignmentInput.addEventListener("input", () => {
     if (mainSnAssignmentInput.value.trim()) {
       clearTaskNameError();
     }
     clearMainSnError();
     renderMainAssignmentOptions();
+    refreshMainCommentSuggestions();
   });
   mainSnCodeSelect.addEventListener("change", () => {
     clearMainSnError();
@@ -348,6 +471,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   mainSnNotesInput.addEventListener("input", () => {
     clearMainSnError();
+    refreshMainCommentSuggestions();
   });
   refreshFromBackground();
 });
@@ -448,6 +572,7 @@ stopButton.addEventListener("click", () => {
   chrome.runtime.sendMessage({ action: "stop" }, (response) => {
     if (response?.status === "stopped") {
       showRunningState(false);
+      loadMainBlocksForSuggestions();
       refreshFromBackground();
     }
   });
@@ -465,6 +590,7 @@ finishButton.addEventListener("click", () => {
       renderMainAssignmentOptions();
       renderMainCodeOptions();
       renderMainRateTypeOptions(snConfig.defaultRateTypeSysId || "");
+      loadMainBlocksForSuggestions();
     }
   });
 });

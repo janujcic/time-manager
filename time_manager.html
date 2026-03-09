@@ -183,11 +183,31 @@
     <div id="settings-tab-content" class="tab-content">
       <section class="dashboard-section">
         <h3>Extension Settings</h3>
-        <div class="servicenow-controls">
-          <label for="sn-default-rate-type-select">Default Rate Type:</label>
-          <select id="sn-default-rate-type-select"></select>
+        <div class="settings-subsection">
+          <div class="servicenow-controls settings-controls-row">
+            <label for="sn-default-rate-type-select">Default Rate Type:</label>
+            <select id="sn-default-rate-type-select"></select>
+          </div>
+        </div>
+        <div class="settings-subsection">
+          <h3>Recommendations</h3>
+          <p class="settings-helper-text">Recommendations apply only to the "Extra notes" field.</p>
+          <div class="servicenow-controls settings-controls-row">
+            <label for="sn-notes-suggestion-weeks-input">Show suggestions from last X weeks:</label>
+            <input
+              type="number"
+              id="sn-notes-suggestion-weeks-input"
+              min="1"
+              max="52"
+              step="1"
+              value="4"
+            />
+          </div>
+        </div>
+        <div class="settings-actions">
           <button id="sn-save-default-rate-type-button">Save</button>
         </div>
+        <p id="settings-status" class="dashboard-status"></p>
       </section>
     </div>
   </div>
@@ -220,8 +240,10 @@
           <input
             type="text"
             id="sn-comment-input"
+            list="sn-comment-suggestion-list"
             placeholder="Optional for task, required for category"
           />
+          <datalist id="sn-comment-suggestion-list"></datalist>
         </div>
         <div class="task-time">
           <label for="task-start-date">Start Time:</label>

@@ -17,6 +17,7 @@ const snRateTypeWrap = document.getElementById("sn-rate-type-wrap");
 const snRateTypeSelect = document.getElementById("sn-rate-type-select");
 const snCommentWrap = document.getElementById("sn-comment-wrap");
 const snCommentInput = document.getElementById("sn-comment-input");
+const snCommentSuggestionList = document.getElementById("sn-comment-suggestion-list");
 const blockLogTableBody = document.querySelector("#block-log-table tbody");
 
 const rangePresetSelect = document.getElementById("range-preset");
@@ -35,6 +36,8 @@ const kpiAvgBlock = document.getElementById("kpi-avg-block");
 const snEnabledInput = document.getElementById("sn-enabled");
 const snInstanceUrlInput = document.getElementById("sn-instance-url");
 const snDefaultRateTypeSelect = document.getElementById("sn-default-rate-type-select");
+const snNotesSuggestionWeeksInput = document.getElementById("sn-notes-suggestion-weeks-input");
+const settingsStatus = document.getElementById("settings-status");
 const snSaveConfigButton = document.getElementById("sn-save-config-button");
 const snSaveDefaultRateTypeButton = document.getElementById("sn-save-default-rate-type-button");
 const snConnectButton = document.getElementById("sn-connect-button");
@@ -68,7 +71,7 @@ const timeBlocksContent = document.getElementById("time-blocks-content");
 let allBlocks = [];
 let filteredBlocks = [];
 let editingBlockId = null;
-let snConfig = { enabled: false, instanceUrl: "", defaultRateTypeSysId: "" };
+let snConfig = { enabled: false, instanceUrl: "", defaultRateTypeSysId: "", notesSuggestionWeeks: 4 };
 let snLookupCache = { fetchedAtMs: 0, tasks: [], categories: [], timeCodes: [], rateTypes: [] };
 let snConnectionState = { connected: false, code: "", message: "" };
 const TASK_PAGE_SIZE = 5;
@@ -151,7 +154,14 @@ function bindDashboardEvents() {
   taskNameInput.addEventListener("input", onTaskNameInputChanged);
   snCodeSelect.addEventListener("change", clearManualInputBorders);
   snRateTypeSelect.addEventListener("change", clearManualInputBorders);
-  snCommentInput.addEventListener("input", clearManualInputBorders);
+  snCommentInput.addEventListener("input", () => {
+    clearManualInputBorders();
+    refreshCommentSuggestions();
+  });
+  snNotesSuggestionWeeksInput.addEventListener("input", () => {
+    snNotesSuggestionWeeksInput.classList.remove("input-error");
+    setSettingsStatus("");
+  });
   taskStartDateInput.addEventListener("input", onStartDateTimeChanged);
   taskStartTimeInput.addEventListener("input", onStartDateTimeChanged);
   taskEndDateInput.addEventListener("input", onEndDateTimeChanged);
@@ -181,6 +191,18 @@ function setSnStatus(message) {
 
 function setSnSyncReport(message) {
   snSyncReport.textContent = message || "";
+}
+
+function setSettingsStatus(message) {
+  settingsStatus.textContent = message || "";
+}
+
+function normalizeNotesSuggestionWeeks(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 4;
+  }
+  return Math.min(52, Math.max(1, Math.floor(numeric)));
 }
 
 function updateServiceNowUiVisibility() {
@@ -451,6 +473,7 @@ function refreshServiceNowLookupsFromCache() {
       renderCodeOptions();
       renderRateTypeOptions(snConfig.defaultRateTypeSysId || "");
       renderDefaultRateTypeOptions(snConfig.defaultRateTypeSysId || "");
+      refreshCommentSuggestions();
     }
   });
 }
@@ -458,6 +481,7 @@ function refreshServiceNowLookupsFromCache() {
 function onTaskNameInputChanged() {
   clearManualInputBorders();
   renderAssignmentOptions();
+  refreshCommentSuggestions();
 }
 
 function getSelectedAssignment() {
@@ -466,6 +490,99 @@ function getSelectedAssignment() {
     return null;
   }
   return getAssignmentOptions("").find((item) => item.label === typedValue) || null;
+}
+
+function getCategoryKeyFromAssignment(assignment) {
+  if (!assignment || assignment.kind !== "category") {
+    return "";
+  }
+  const sysId = String(assignment.data?.sys_id || "").trim();
+  if (sysId) {
+    return `sys:${sysId}`;
+  }
+  const categoryValue = String(assignment.data?.value || "").trim();
+  return categoryValue ? `value:${categoryValue}` : "";
+}
+
+function getCategoryKeyFromBlock(block) {
+  if (!block || block.snSelectionType !== "category") {
+    return "";
+  }
+  const sysId = String(block.snCategorySysId || "").trim();
+  if (sysId) {
+    return `sys:${sysId}`;
+  }
+  const categoryValue = String(block.snCategoryValue || "").trim();
+  return categoryValue ? `value:${categoryValue}` : "";
+}
+
+function buildCategoryNoteSuggestions(blocks, categoryKey, queryText, weeks) {
+  if (!categoryKey) {
+    return [];
+  }
+
+  const normalizedQuery = String(queryText || "").trim().toLowerCase();
+  const cutoffMs = Date.now() - normalizeNotesSuggestionWeeks(weeks) * 7 * 24 * 60 * 60 * 1000;
+  const dedupeByText = new Map();
+
+  for (const block of Array.isArray(blocks) ? blocks : []) {
+    if (getCategoryKeyFromBlock(block) !== categoryKey) {
+      continue;
+    }
+
+    const blockStartMs = Number(block.startMs);
+    if (!Number.isFinite(blockStartMs) || blockStartMs < cutoffMs) {
+      continue;
+    }
+
+    const note = String(block.snCommentText || "").trim();
+    if (!note) {
+      continue;
+    }
+    if (normalizedQuery && !note.toLowerCase().includes(normalizedQuery)) {
+      continue;
+    }
+
+    const dedupeKey = note.toLowerCase();
+    const existing = dedupeByText.get(dedupeKey);
+    if (!existing || blockStartMs > existing.lastUsedMs) {
+      dedupeByText.set(dedupeKey, { text: note, lastUsedMs: blockStartMs });
+    }
+  }
+
+  return Array.from(dedupeByText.values())
+    .sort((a, b) => b.lastUsedMs - a.lastUsedMs || a.text.localeCompare(b.text))
+    .map((item) => item.text);
+}
+
+function renderCommentSuggestions(suggestions) {
+  if (!snCommentSuggestionList) {
+    return;
+  }
+
+  snCommentSuggestionList.innerHTML = "";
+  for (const suggestion of suggestions) {
+    const option = document.createElement("option");
+    option.value = suggestion;
+    snCommentSuggestionList.appendChild(option);
+  }
+}
+
+function refreshCommentSuggestions() {
+  const selectedAssignment = getSelectedAssignment();
+  const categoryKey = getCategoryKeyFromAssignment(selectedAssignment);
+  if (!categoryKey) {
+    renderCommentSuggestions([]);
+    return;
+  }
+
+  const suggestions = buildCategoryNoteSuggestions(
+    allBlocks,
+    categoryKey,
+    snCommentInput.value,
+    snConfig.notesSuggestionWeeks
+  );
+  renderCommentSuggestions(suggestions);
 }
 
 function getAssignmentLabelForBlock(block) {
@@ -504,38 +621,64 @@ function getSelectedCode() {
 function loadServiceNowConfig() {
   chrome.runtime.sendMessage({ action: "servicenow/getConfig" }, (response) => {
     if (response?.status === "success") {
-      snConfig = response.data || { enabled: false, instanceUrl: "", defaultRateTypeSysId: "" };
+      snConfig = response.data || {
+        enabled: false,
+        instanceUrl: "",
+        defaultRateTypeSysId: "",
+        notesSuggestionWeeks: 4,
+      };
       snConfig.defaultRateTypeSysId = snConfig.defaultRateTypeSysId || "";
+      snConfig.notesSuggestionWeeks = normalizeNotesSuggestionWeeks(snConfig.notesSuggestionWeeks);
       snEnabledInput.checked = Boolean(snConfig.enabled);
       snInstanceUrlInput.value = snConfig.instanceUrl || "";
+      snNotesSuggestionWeeksInput.value = String(snConfig.notesSuggestionWeeks);
       renderDefaultRateTypeOptions(snConfig.defaultRateTypeSysId);
       setSnConnectionState({ connected: false, code: "", message: "" });
       updateServiceNowUiVisibility();
       updateSyncRangePreview();
+      refreshCommentSuggestions();
     }
   });
 }
 
 function saveServiceNowConfigWithStatus(successMessage) {
+  const rawWeeks = String(snNotesSuggestionWeeksInput.value || "").trim();
+  const parsedWeeks = Number(rawWeeks);
+  if (!Number.isFinite(parsedWeeks) || parsedWeeks < 1 || parsedWeeks > 52) {
+    setSettingsStatus("Notes suggestion weeks must be a number between 1 and 52.");
+    snNotesSuggestionWeeksInput.classList.add("input-error");
+    return;
+  }
+
+  snNotesSuggestionWeeksInput.classList.remove("input-error");
+  setSettingsStatus("");
+
   const config = {
     enabled: snEnabledInput.checked,
     instanceUrl: snInstanceUrlInput.value.trim(),
     defaultRateTypeSysId: snDefaultRateTypeSelect.value || "",
+    notesSuggestionWeeks: normalizeNotesSuggestionWeeks(parsedWeeks),
   };
 
   chrome.runtime.sendMessage({ action: "servicenow/saveConfig", config }, (response) => {
     if (!response || response.status !== "success") {
-      setSnStatus(response?.message || "Failed to save ServiceNow config.");
+      const message = response?.message || "Failed to save ServiceNow config.";
+      setSnStatus(message);
+      setSettingsStatus(message);
       return;
     }
 
     snConfig = response.data;
     snConfig.defaultRateTypeSysId = snConfig.defaultRateTypeSysId || "";
+    snConfig.notesSuggestionWeeks = normalizeNotesSuggestionWeeks(snConfig.notesSuggestionWeeks);
+    snNotesSuggestionWeeksInput.value = String(snConfig.notesSuggestionWeeks);
     setSnConnectionState({ connected: false, code: "", message: "" });
     renderRateTypeOptions(snConfig.defaultRateTypeSysId || "");
     renderDefaultRateTypeOptions(snConfig.defaultRateTypeSysId || "");
     updateServiceNowUiVisibility();
     setSnStatus(successMessage);
+    setSettingsStatus(successMessage);
+    refreshCommentSuggestions();
   });
 }
 
@@ -544,7 +687,7 @@ function saveServiceNowConfig() {
 }
 
 function saveDefaultRateTypeSetting() {
-  saveServiceNowConfigWithStatus("Default rate type saved.");
+  saveServiceNowConfigWithStatus("Settings saved.");
 }
 
 function handleConnectResponse(response) {
@@ -1169,9 +1312,11 @@ function rebuildDashboard() {
     if (response && response.status === "success") {
       allBlocks = response.data || [];
       applyFiltersAndRender();
+      refreshCommentSuggestions();
     } else {
       allBlocks = [];
       applyFiltersAndRender();
+      refreshCommentSuggestions();
     }
   });
 }
@@ -1206,6 +1351,7 @@ function clearManualInputBorders() {
   snCodeSelect.classList.remove("input-error");
   snRateTypeSelect.classList.remove("input-error");
   snCommentInput.classList.remove("input-error");
+  snNotesSuggestionWeeksInput.classList.remove("input-error");
 }
 
 function normalizeDurationValue(rawValue) {
@@ -1312,6 +1458,7 @@ function resetManualForm() {
   renderAssignmentOptions();
   renderCodeOptions();
   renderRateTypeOptions(snConfig.defaultRateTypeSysId || "");
+  refreshCommentSuggestions();
   editingBlockId = null;
   addLogModalTitle.textContent = "Add time block";
   saveLogButton.textContent = "Save Block";
@@ -1355,6 +1502,7 @@ function openEditBlockModal(blockId) {
   renderCodeOptions(block.snCodeSysId || "");
   renderRateTypeOptions(block.snRateTypeSysId || snConfig.defaultRateTypeSysId || "");
   snCommentInput.value = block.snCommentText || "";
+  refreshCommentSuggestions();
   clearManualMessages();
   clearManualInputBorders();
   addLogModal.style.display = "block";
