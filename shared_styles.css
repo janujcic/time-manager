@@ -588,6 +588,7 @@ table tr:hover {
 }
 
 #sn-save-config-button,
+#sn-save-default-rate-type-button,
 #sn-connect-button,
 #sn-refresh-lookups-button,
 #sn-sync-button {
@@ -595,6 +596,7 @@ table tr:hover {
 }
 
 #sn-save-config-button:hover,
+#sn-save-default-rate-type-button:hover,
 #sn-connect-button:hover,
 #sn-refresh-lookups-button:hover,
 #sn-sync-button:hover {
