@@ -1,4 +1,5 @@
 let currentTaskName = "";
+let currentTaskNotes = "";
 let snConfig = { enabled: false, instanceUrl: "", defaultRateTypeSysId: "", notesSuggestionWeeks: 4 };
 let snLookupCache = { fetchedAtMs: 0, tasks: [], categories: [], timeCodes: [], rateTypes: [] };
 let mainAllBlocks = [];
@@ -8,6 +9,7 @@ const enterStartTask = document.querySelector(".enter-start-task");
 const runningTask = document.querySelector(".running-task");
 const runningTaskMessage = document.getElementById("running-task-message");
 const runningTaskTitle = document.getElementById("running-task-title");
+const runningTaskNotes = document.getElementById("running-task-notes");
 const elapsedTimeDisplay = document.getElementById("elapsed-time");
 const startButton = document.getElementById("start-button");
 const resumeButton = document.getElementById("resume-button");
@@ -100,6 +102,14 @@ function formatTaskTitle(taskName) {
 function updateRunningMessage(isRunning) {
   runningTaskTitle.textContent = formatTaskTitle(currentTaskName);
   runningTaskTitle.title = currentTaskName || "";
+  const trimmedNotes = String(currentTaskNotes || "").trim();
+  if (trimmedNotes) {
+    runningTaskNotes.textContent = `Extra notes: ${trimmedNotes}`;
+    runningTaskNotes.style.display = "block";
+  } else {
+    runningTaskNotes.textContent = "";
+    runningTaskNotes.style.display = "none";
+  }
   runningTaskMessage.textContent = isRunning ? "Status: Running" : "Status: Paused";
 }
 
@@ -120,6 +130,9 @@ function showRegistrationState() {
   startButton.style.display = "inline-block";
   elapsedTimeDisplay.textContent = "0h 0m 0s";
   currentTaskName = "";
+  currentTaskNotes = "";
+  runningTaskNotes.textContent = "";
+  runningTaskNotes.style.display = "none";
   mainSnNotesInput.value = "";
   renderMainRateTypeOptions(snConfig.defaultRateTypeSysId || "");
   refreshMainCommentSuggestions();
@@ -435,8 +448,9 @@ function refreshFromBackground() {
     }
 
     currentTaskName = timerData.savedTaskName || "";
+    currentTaskNotes = timerData.snCommentText || "";
     mainSnAssignmentInput.value = currentTaskName;
-    mainSnNotesInput.value = timerData.snCommentText || "";
+    mainSnNotesInput.value = currentTaskNotes;
     elapsedTimeDisplay.textContent = transformMilisecondsToTime(timerData.elapsedTime || 0);
 
     renderMainAssignmentOptions(getAssignmentLabelFromTimerData(timerData));
@@ -546,6 +560,7 @@ startButton.addEventListener("click", () => {
   chrome.runtime.sendMessage({ action: "start", taskName, taskData }, (response) => {
     if (response?.status === "started") {
       currentTaskName = taskName;
+      currentTaskNotes = taskData.snCommentText || "";
       showRunningState(true);
       refreshFromBackground();
     } else {
