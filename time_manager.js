@@ -80,19 +80,24 @@ const BLOCK_PAGE_SIZE = 5;
 let currentBlockPage = 1;
 let suppressTimeFieldSync = false;
 let areBlocksExpanded = false;
+const DEFAULT_DASHBOARD_RANGE_PRESET = "this-week";
+const DASHBOARD_PREFERENCES_KEY = "dashboardPreferences";
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 document.addEventListener("DOMContentLoaded", () => {
   setActiveTab("dashboard");
   bindDashboardEvents();
   loadServiceNowConfig();
   refreshServiceNowLookupsFromCache();
-  rebuildDashboard();
+  restoreDashboardRangePreset(() => {
+    rebuildDashboard();
+  });
 });
 
 function bindDashboardEvents() {
   rangePresetSelect.addEventListener("change", () => {
-    customRangeControls.style.display =
-      rangePresetSelect.value === "custom" ? "flex" : "none";
+    updateCustomRangeControlsVisibility();
+    saveDashboardRangePreset();
     applyFiltersAndRender();
   });
 
@@ -169,6 +174,43 @@ function bindDashboardEvents() {
   taskDurationTimeInput.addEventListener("input", onDurationChanged);
   taskStartNowButton.addEventListener("click", onStartNowClicked);
   taskEndNowButton.addEventListener("click", onEndNowClicked);
+}
+
+function isSupportedDashboardRangePreset(value) {
+  return ["today", "yesterday", "this-week", "this-month", "all", "custom"].includes(value);
+}
+
+function updateCustomRangeControlsVisibility() {
+  customRangeControls.style.display = rangePresetSelect.value === "custom" ? "flex" : "none";
+}
+
+function saveDashboardRangePreset() {
+  const selectedPreset = isSupportedDashboardRangePreset(rangePresetSelect.value)
+    ? rangePresetSelect.value
+    : DEFAULT_DASHBOARD_RANGE_PRESET;
+  chrome.storage.local.set(
+    {
+      [DASHBOARD_PREFERENCES_KEY]: {
+        rangePreset: selectedPreset,
+      },
+    },
+    () => {}
+  );
+}
+
+function restoreDashboardRangePreset(onComplete) {
+  chrome.storage.local.get([DASHBOARD_PREFERENCES_KEY], (result) => {
+    const preferences = result?.[DASHBOARD_PREFERENCES_KEY] || {};
+    const savedPreset = String(preferences.rangePreset || "").trim();
+    const resolvedPreset = isSupportedDashboardRangePreset(savedPreset)
+      ? savedPreset
+      : DEFAULT_DASHBOARD_RANGE_PRESET;
+    rangePresetSelect.value = resolvedPreset;
+    updateCustomRangeControlsVisibility();
+    if (typeof onComplete === "function") {
+      onComplete();
+    }
+  });
 }
 
 function setActiveTab(tabName) {
@@ -857,6 +899,10 @@ function startOfToday() {
   return date.getTime();
 }
 
+function startOfYesterday() {
+  return startOfToday() - DAY_IN_MS;
+}
+
 function startOfWeek() {
   const date = new Date();
   const day = date.getDay();
@@ -879,6 +925,9 @@ function getRangeBounds() {
 
   if (preset === "today") {
     return { startMs: startOfToday(), endMs: now };
+  }
+  if (preset === "yesterday") {
+    return { startMs: startOfYesterday(), endMs: startOfToday() - 1 };
   }
   if (preset === "this-week") {
     return { startMs: startOfWeek(), endMs: now };
