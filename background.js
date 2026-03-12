@@ -857,7 +857,11 @@ function splitBlockByDay(block) {
   return slices;
 }
 
-function buildSyncGroupKey(block, weekStartDate) {
+function resolveEffectiveRateTypeForSync(block, defaultRateTypeSysId = "") {
+  return String(block?.snRateTypeSysId || defaultRateTypeSysId || "").trim();
+}
+
+function buildSyncGroupKey(block, weekStartDate, effectiveRateTypeSysId = "") {
   const selectionType = block.snSelectionType || "";
   const selectionKey =
     selectionType === "task"
@@ -865,16 +869,47 @@ function buildSyncGroupKey(block, weekStartDate) {
       : selectionType === "category"
         ? `category:${block.snCategorySysId || block.snCategoryValue || ""}`
         : "none";
-  const categoryCommentKey =
-    selectionType === "category"
-      ? encodeURIComponent(String(block.snCommentText || "").trim())
-      : "";
-  return `${weekStartDate}|${selectionType}|${selectionKey}|${block.snCodeSysId || ""}|${
-    block.snRateTypeSysId || ""
-  }|${categoryCommentKey}`;
+  const commentsKey = encodeURIComponent(String(block.snCommentText || "").trim());
+  return `${weekStartDate}|${selectionType}|${selectionKey}|${block.snCodeSysId || ""}|${effectiveRateTypeSysId}|${commentsKey}`;
 }
 
-function aggregateBlocksForSync(blocks, blockIds = []) {
+function clipBlockToSyncBounds(block, syncBounds = null) {
+  if (!syncBounds) {
+    return block;
+  }
+
+  const rawStartMs = Number(block?.startMs);
+  const rawEndMs = Number(block?.endMs);
+  if (!Number.isFinite(rawStartMs) || !Number.isFinite(rawEndMs) || rawEndMs <= rawStartMs) {
+    return null;
+  }
+
+  let clippedStartMs = rawStartMs;
+  let clippedEndMs = rawEndMs;
+
+  const boundsStartMs = Number(syncBounds.startMs);
+  if (Number.isFinite(boundsStartMs)) {
+    clippedStartMs = Math.max(clippedStartMs, boundsStartMs);
+  }
+
+  const boundsEndMs = Number(syncBounds.endMs);
+  if (Number.isFinite(boundsEndMs)) {
+    const boundsEndExclusiveMs = boundsEndMs + 1;
+    clippedEndMs = Math.min(clippedEndMs, boundsEndExclusiveMs);
+  }
+
+  if (clippedEndMs <= clippedStartMs) {
+    return null;
+  }
+
+  return {
+    ...block,
+    startMs: clippedStartMs,
+    endMs: clippedEndMs,
+  };
+}
+
+function aggregateBlocksForSync(blocks, blockIds = [], syncBounds = null, defaultRateTypeSysId = "") {
   const allowedIds = new Set(
     (Array.isArray(blockIds) ? blockIds : []).map((id) => String(id || "")).filter(Boolean)
   );
@@ -906,8 +941,18 @@ function aggregateBlocksForSync(blocks, blockIds = []) {
         continue;
       }
     }
+    const effectiveRateTypeSysId = resolveEffectiveRateTypeForSync(block, defaultRateTypeSysId);
+    if (!effectiveRateTypeSysId) {
+      invalidBlocks.push({ blockId, reason: "missing rate type" });
+      continue;
+    }
 
-    const slices = splitBlockByDay(block);
+    const clippedBlock = clipBlockToSyncBounds(block, syncBounds);
+    if (!clippedBlock) {
+      continue;
+    }
+
+    const slices = splitBlockByDay(clippedBlock);
     if (slices.length === 0) {
       invalidBlocks.push({ blockId, reason: "invalid block duration" });
       continue;
@@ -915,7 +960,7 @@ function aggregateBlocksForSync(blocks, blockIds = []) {
 
     for (const slice of slices) {
       const weekStartDate = formatDateKey(getStartOfWeek(slice.startMs).getTime());
-      const groupKey = buildSyncGroupKey(block, weekStartDate);
+      const groupKey = buildSyncGroupKey(block, weekStartDate, effectiveRateTypeSysId);
       if (!groups.has(groupKey)) {
         groups.set(groupKey, {
           groupKey,
@@ -930,7 +975,7 @@ function aggregateBlocksForSync(blocks, blockIds = []) {
           snCodeSysId: block.snCodeSysId || "",
           snCodeValue: block.snCodeValue || "",
           snCodeDescription: block.snCodeDescription || "",
-          snRateTypeSysId: block.snRateTypeSysId || "",
+          snRateTypeSysId: effectiveRateTypeSysId,
           snCommentText: String(block.snCommentText || "").trim(),
           dayHours: {
             monday: 0,
@@ -943,6 +988,7 @@ function aggregateBlocksForSync(blocks, blockIds = []) {
           },
           totalHours: 0,
           comments: [],
+          touchedDays: [],
           blockIds: [],
         });
       }
@@ -952,6 +998,9 @@ function aggregateBlocksForSync(blocks, blockIds = []) {
       const sliceHours = slice.durationMs / (60 * 60 * 1000);
       group.dayHours[weekdayField] += sliceHours;
       group.totalHours += sliceHours;
+      if (!group.touchedDays.includes(weekdayField)) {
+        group.touchedDays.push(weekdayField);
+      }
       if (!group.blockIds.includes(blockId)) {
         group.blockIds.push(blockId);
       }
@@ -1485,6 +1534,22 @@ async function serviceNowSyncVisibleBlocks(requestData = {}) {
     );
   }
 
+  const startMsCandidate = Number(requestData.startMs);
+  const endMsCandidate = Number(requestData.endMs);
+  const hasFiniteStart = Number.isFinite(startMsCandidate);
+  const hasFiniteEnd = Number.isFinite(endMsCandidate);
+  let syncBounds = null;
+  if (hasFiniteStart || hasFiniteEnd) {
+    if (!hasFiniteStart || !hasFiniteEnd || endMsCandidate < startMsCandidate) {
+      return createSnError(
+        "SN_API_ERROR",
+        "Invalid sync bounds were provided.",
+        "Refresh the extension view and retry sync."
+      );
+    }
+    syncBounds = { startMs: startMsCandidate, endMs: endMsCandidate };
+  }
+
   const connectResponse = await connectServiceNowSession();
   if (connectResponse.status !== "success") {
     return connectResponse;
@@ -1492,7 +1557,8 @@ async function serviceNowSyncVisibleBlocks(requestData = {}) {
 
   const allBlocks = await getTimeBlocks();
   const snConfig = await getServiceNowConfig();
-  const aggregation = aggregateBlocksForSync(allBlocks, blockIds);
+  const defaultRateTypeSysId = readString(snConfig.defaultRateTypeSysId);
+  const aggregation = aggregateBlocksForSync(allBlocks, blockIds, syncBounds, defaultRateTypeSysId);
   const report = createSyncReportSkeleton(rangePreset, aggregation);
   if (aggregation.groups.length === 0) {
     return { status: "success", data: report };
@@ -1505,7 +1571,7 @@ async function serviceNowSyncVisibleBlocks(requestData = {}) {
     {
       userId: connectResponse.data.userId || lastConnectedSnUserId || "",
       groups: aggregation.groups,
-      defaultRateTypeSysId: readString(snConfig.defaultRateTypeSysId),
+      defaultRateTypeSysId,
     }
   );
   if (bridgeResponse.status !== "success") {

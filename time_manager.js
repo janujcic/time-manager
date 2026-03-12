@@ -484,21 +484,48 @@ function renderDefaultRateTypeOptions(selectedRateTypeSysId = "") {
   );
 
   snDefaultRateTypeSelect.innerHTML = "";
-  const noneOption = document.createElement("option");
-  noneOption.value = "";
-  noneOption.textContent = "No default rate type";
-  snDefaultRateTypeSelect.appendChild(noneOption);
-
+  const availableById = new Set();
+  let normalRateTypeSysId = "";
   rateTypes.forEach((rateType) => {
+    const sysId = String(rateType?.sys_id || "");
+    if (!sysId) {
+      return;
+    }
+    availableById.add(sysId);
+    if (!normalRateTypeSysId) {
+      const normalizedName = String(rateType?.name || rateType?.label || "").trim().toLowerCase();
+      if (normalizedName === "normal") {
+        normalRateTypeSysId = sysId;
+      }
+    }
+
     const option = document.createElement("option");
-    option.value = rateType.sys_id;
-    option.textContent = rateType.label || rateType.name || rateType.sys_id;
+    option.value = sysId;
+    option.textContent = rateType.label || rateType.name || sysId;
     snDefaultRateTypeSelect.appendChild(option);
   });
 
-  if (selectedRateTypeSysId) {
-    snDefaultRateTypeSelect.value = selectedRateTypeSysId;
+  if (rateTypes.length === 0) {
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "No rate types available";
+    snDefaultRateTypeSelect.appendChild(placeholder);
+    snDefaultRateTypeSelect.value = "";
+    return;
   }
+
+  const preferredSelection = String(selectedRateTypeSysId || "").trim();
+  if (preferredSelection && availableById.has(preferredSelection)) {
+    snDefaultRateTypeSelect.value = preferredSelection;
+    return;
+  }
+
+  if (normalRateTypeSysId) {
+    snDefaultRateTypeSelect.value = normalRateTypeSysId;
+    return;
+  }
+
+  snDefaultRateTypeSelect.value = String(rateTypes[0]?.sys_id || "");
 }
 
 function refreshServiceNowLookupsFromCache() {
@@ -960,18 +987,25 @@ function getRangeBounds() {
 }
 
 function getServiceNowSyncRangeBounds(options = {}) {
-  const now = Date.now();
   const preset = snSyncRangePresetSelect.value;
   const silent = Boolean(options.silent);
+  const endOfTodayMs = startOfToday() + DAY_IN_MS - 1;
 
   if (preset === "today") {
-    return { startMs: startOfToday(), endMs: now };
+    return { startMs: startOfToday(), endMs: endOfTodayMs };
   }
   if (preset === "this-week") {
-    return { startMs: startOfWeek(), endMs: now };
+    return { startMs: startOfWeek(), endMs: startOfWeek() + DAY_IN_MS * 7 - 1 };
   }
   if (preset === "this-month") {
-    return { startMs: startOfMonth(), endMs: now };
+    const monthStartMs = startOfMonth();
+    const monthStartDate = new Date(monthStartMs);
+    const nextMonthStartMs = new Date(
+      monthStartDate.getFullYear(),
+      monthStartDate.getMonth() + 1,
+      1
+    ).getTime();
+    return { startMs: monthStartMs, endMs: nextMonthStartMs - 1 };
   }
   if (preset === "custom") {
     const startDateValue = snSyncCustomStartDateInput.value;
@@ -1005,10 +1039,15 @@ function getBlocksInBounds(blocks, bounds) {
     return [];
   }
   return blocks.filter((block) => {
-    if (bounds.startMs !== null && block.startMs < bounds.startMs) {
+    const blockStartMs = Number(block?.startMs);
+    const blockEndMs = Number(block?.endMs);
+    if (!Number.isFinite(blockStartMs) || !Number.isFinite(blockEndMs) || blockEndMs <= blockStartMs) {
       return false;
     }
-    if (bounds.endMs !== null && block.startMs > bounds.endMs) {
+    if (bounds.startMs !== null && blockEndMs < bounds.startMs) {
+      return false;
+    }
+    if (bounds.endMs !== null && blockStartMs > bounds.endMs) {
       return false;
     }
     return true;
@@ -1120,6 +1159,8 @@ function syncVisibleRangeToServiceNow() {
       data: {
         rangePreset: snSyncRangePresetSelect.value,
         blockIds,
+        startMs: syncBounds.startMs,
+        endMs: syncBounds.endMs,
       },
     },
     (response) => {
