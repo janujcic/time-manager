@@ -2,6 +2,7 @@
   const REQUEST_CHANNEL = "tm_sn_bridge_request";
   const RESPONSE_CHANNEL = "tm_sn_bridge_response";
   const BRIDGE_STATE_KEY = "__tmSnPageBridgeState";
+  const WEEKDAY_FIELDS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
   function postResponse(payload) {
     window.postMessage({ channel: RESPONSE_CHANNEL, ...payload }, "*");
@@ -269,11 +270,15 @@
       "/api/now/table/u_time_card_codes?sysparm_display_value=all&sysparm_exclude_reference_link=true" +
       "&sysparm_limit=500&sysparm_fields=sys_id,u_time_card_code,u_description,u_user" +
       `&sysparm_query=${encodeURIComponent(timeCodeQuery)}`;
+    const rateTypeEndpoint =
+      "/api/now/table/rate_type?sysparm_display_value=all&sysparm_exclude_reference_link=true" +
+      "&sysparm_limit=500&sysparm_fields=sys_id,name,inactive";
 
-    const [taskRows, categoryRows, timeCodeRows] = await Promise.all([
+    const [taskRows, categoryRows, timeCodeRows, rateTypeRows] = await Promise.all([
       fetchTable(taskEndpoint),
       fetchTable(categoryEndpoint),
       fetchTable(timeCodeEndpoint),
+      fetchTable(rateTypeEndpoint),
     ]);
 
     const tasks = taskRows
@@ -304,7 +309,17 @@
       }))
       .filter((item) => item.sys_id && item.u_time_card_code);
 
-    return { tasks, categories, timeCodes };
+    const rateTypes = rateTypeRows
+      .map((item) => ({
+        sys_id: readDisplayValue(item.sys_id),
+        name: String(readDisplayValue(item.name) || ""),
+        inactive: String(readValue(item.inactive) || "").toLowerCase(),
+      }))
+      .filter((item) => item.sys_id && item.name)
+      .filter((item) => item.inactive !== "true" && item.inactive !== "1")
+      .map((item) => ({ sys_id: item.sys_id, name: item.name }));
+
+    return { tasks, categories, timeCodes, rateTypes };
   }
 
   function toHours(value) {
@@ -326,8 +341,23 @@
     return String(readValue(row?.sys_id) || readDisplayValue(row?.sys_id) || "").trim();
   }
 
-  function buildTimeCardPayload(group, userId) {
+  function buildGroupCommentsText(group) {
+    return Array.isArray(group.comments)
+      ? Array.from(new Set(group.comments.map((item) => String(item || "").trim()).filter(Boolean))).join("\n")
+      : "";
+  }
+
+  function escapeQueryValue(value) {
+    return String(value || "").replace(/\^/g, "^^");
+  }
+
+  function resolveEffectiveRateTypeSysId(group, defaultRateTypeSysId = "") {
+    return String(group?.snRateTypeSysId || defaultRateTypeSysId || "").trim();
+  }
+
+  function buildTimeCardPayload(group, userId, effectiveRateTypeSysId = "") {
     const dayHours = group.dayHours || {};
+    const commentsText = buildGroupCommentsText(group);
     const payload = {
       monday: toHours(dayHours.monday),
       tuesday: toHours(dayHours.tuesday),
@@ -337,16 +367,14 @@
       saturday: toHours(dayHours.saturday),
       sunday: toHours(dayHours.sunday),
       total: toHours(group.totalHours),
-      comments: Array.isArray(group.comments)
-        ? Array.from(new Set(group.comments.map((item) => String(item || "").trim()).filter(Boolean))).join(
-            "\n"
-          )
-        : "",
+      comments: commentsText,
       week_starts_on: String(group.weekStartDate || ""),
       user: userId,
       u_time_card_code: String(group.snCodeSysId || ""),
-      rate_type: 
     };
+    if (effectiveRateTypeSysId) {
+      payload.rate_type = effectiveRateTypeSysId;
+    }
 
     if (group.snSelectionType === "task") {
       payload.task = String(group.snTaskSysId || "");
@@ -359,12 +387,52 @@
     return payload;
   }
 
-  function buildMatchingCardsEndpoint(group, userId) {
+  function readDayHoursFromRow(row) {
+    const dayHours = {};
+    for (const field of WEEKDAY_FIELDS) {
+      dayHours[field] = toHours(readValue(row?.[field]) || readDisplayValue(row?.[field]) || 0);
+    }
+    return dayHours;
+  }
+
+  function normalizeTouchedDays(group) {
+    const touched = Array.isArray(group?.touchedDays) ? group.touchedDays : [];
+    return new Set(
+      touched
+        .map((item) => String(item || "").trim().toLowerCase())
+        .filter((item) => WEEKDAY_FIELDS.includes(item))
+    );
+  }
+
+  function mergePayloadDayHoursWithExisting(payload, existingRow, touchedDaysSet) {
+    const mergedDayHours = readDayHoursFromRow(existingRow);
+    for (const field of touchedDaysSet) {
+      mergedDayHours[field] = toHours(payload?.[field]);
+    }
+
+    let mergedTotal = 0;
+    for (const field of WEEKDAY_FIELDS) {
+      mergedTotal += toHours(mergedDayHours[field]);
+    }
+
+    return {
+      ...payload,
+      ...mergedDayHours,
+      total: toHours(mergedTotal),
+    };
+  }
+
+  function buildMatchingCardsEndpoint(group, userId, effectiveRateTypeSysId = "") {
     const baseQueryParts = [
       `user=${userId}`,
       `week_starts_on=${group.weekStartDate}`,
       `u_time_card_code=${group.snCodeSysId}`,
     ];
+    if (effectiveRateTypeSysId) {
+      baseQueryParts.push(`rate_type=${effectiveRateTypeSysId}`);
+    } else {
+      baseQueryParts.push("rate_typeISEMPTY");
+    }
     if (group.snSelectionType === "task") {
       baseQueryParts.push(`task=${group.snTaskSysId}`);
       baseQueryParts.push("category=task_work");
@@ -372,12 +440,20 @@
       baseQueryParts.push("taskISEMPTY");
       baseQueryParts.push(`category=${group.snCategoryValue}`);
     }
+
+    const commentsText = buildGroupCommentsText(group);
+    if (commentsText) {
+      baseQueryParts.push(`comments=${escapeQueryValue(commentsText)}`);
+    } else {
+      baseQueryParts.push("commentsISEMPTY");
+    }
     baseQueryParts.push("ORDERBYDESCsys_updated_on");
 
     const query = baseQueryParts.join("^");
     return (
       "/api/now/table/time_card?sysparm_display_value=all&sysparm_exclude_reference_link=true" +
-      "&sysparm_limit=50&sysparm_fields=sys_id,state,sys_updated_on,time_sheet,rate_type" +
+      "&sysparm_limit=50&sysparm_fields=sys_id,state,sys_updated_on,time_sheet,rate_type," +
+      "monday,tuesday,wednesday,thursday,friday,saturday,sunday,total" +
       `&sysparm_query=${encodeURIComponent(query)}`
     );
   }
@@ -403,8 +479,19 @@
     return defaults;
   }
 
-  async function upsertTimeCardGroup(group, userId, weekDefaultsCache) {
-    const endpoint = buildMatchingCardsEndpoint(group, userId);
+  async function upsertTimeCardGroup(group, userId, weekDefaultsCache, defaultRateTypeSysId = "") {
+    const effectiveRateTypeSysId = resolveEffectiveRateTypeSysId(group, defaultRateTypeSysId);
+    if (!effectiveRateTypeSysId) {
+      return {
+        status: "error",
+        code: "SYNC_RATE_TYPE_REQUIRED",
+        message: "No rate type was resolved for this sync group.",
+        action: "",
+        timeCardSysId: "",
+      };
+    }
+
+    const endpoint = buildMatchingCardsEndpoint(group, userId, effectiveRateTypeSysId);
     const existingCards = await fetchTable(endpoint);
     const editableCards = existingCards.filter((row) => !isSubmittedState(row));
 
@@ -418,7 +505,8 @@
       };
     }
 
-    const payload = buildTimeCardPayload(group, userId);
+    const payload = buildTimeCardPayload(group, userId, effectiveRateTypeSysId);
+    const touchedDaysSet = normalizeTouchedDays(group);
     if (editableCards.length > 0) {
       const targetCard = editableCards[0];
       const targetSysId = getTimeCardSysId(targetCard);
@@ -432,9 +520,14 @@
         };
       }
 
+      const updateBody =
+        touchedDaysSet.size > 0
+          ? mergePayloadDayHoursWithExisting(payload, targetCard, touchedDaysSet)
+          : payload;
+
       const updatePayload = await requestJson(`/api/now/table/time_card/${targetSysId}`, {
         method: "PATCH",
-        body: payload,
+        body: updateBody,
         requireCsrf: true,
       });
       const updatedSysId = String(
@@ -453,7 +546,7 @@
     if (defaults.timeSheetSysId) {
       payload.time_sheet = defaults.timeSheetSysId;
     }
-    if (defaults.rateTypeSysId) {
+    if (!payload.rate_type && defaults.rateTypeSysId) {
       payload.rate_type = defaults.rateTypeSysId;
     }
 
@@ -483,6 +576,9 @@
       snTaskSysId: String(group.snTaskSysId || ""),
       snCategoryValue: String(group.snCategoryValue || ""),
       snCodeSysId: String(group.snCodeSysId || ""),
+      snRateTypeSysId: String(group.snRateTypeSysId || ""),
+      snCommentText: String(group.snCommentText || ""),
+      touchedDays: Array.isArray(group.touchedDays) ? group.touchedDays : [],
       dayHours: {
         monday: toHours(dayHours.monday),
         tuesday: toHours(dayHours.tuesday),
@@ -499,6 +595,7 @@
 
   async function syncTimeCards(payload = {}) {
     const groups = Array.isArray(payload.groups) ? payload.groups : [];
+    const defaultRateTypeSysId = String(payload.defaultRateTypeSysId || "");
     let userId = String(payload.userId || "");
     if (!userId) {
       const sessionUser = await resolveSessionUser();
@@ -555,7 +652,12 @@
       }
 
       try {
-        const upsertResult = await upsertTimeCardGroup(group, userId, weekDefaultsCache);
+        const upsertResult = await upsertTimeCardGroup(
+          group,
+          userId,
+          weekDefaultsCache,
+          defaultRateTypeSysId
+        );
         results.push({
           groupKey: group.groupKey,
           weekStartDate: group.weekStartDate,
