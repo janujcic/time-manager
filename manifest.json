@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Time Manager",
-  "version": "2.11",
+  "version": "2.12",
   "description": "A simple time-tracking extension.",
   "permissions": ["storage", "activeTab", "tabs", "scripting"],
   "optional_host_permissions": ["https://*/*"],
