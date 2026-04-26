@@ -172,6 +172,7 @@ function bindDashboardEvents() {
   taskEndDateInput.addEventListener("input", onEndDateTimeChanged);
   taskEndTimeInput.addEventListener("input", onEndDateTimeChanged);
   taskDurationTimeInput.addEventListener("input", onDurationChanged);
+  taskDurationTimeInput.addEventListener("blur", onDurationBlur);
   taskStartNowButton.addEventListener("click", onStartNowClicked);
   taskEndNowButton.addEventListener("click", onEndNowClicked);
 }
@@ -1455,10 +1456,20 @@ function normalizeDurationValue(rawValue) {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
+function getDurationMinutesFromValue(rawValue) {
+  const value = String(rawValue || "").trim();
+  const match = /^(\d{1,3}):([0-5]\d)$/.exec(value);
+  if (!match) {
+    return Number.NaN;
+  }
+  const hours = Math.min(999, Number.parseInt(match[1], 10));
+  const minutes = Number.parseInt(match[2], 10);
+  return hours * 60 + minutes;
+}
+
 function getDurationMinutes() {
   const normalized = normalizeDurationValue(taskDurationTimeInput.value);
-  const [hoursPart, minutesPart] = normalized.split(":");
-  return Number.parseInt(hoursPart, 10) * 60 + Number.parseInt(minutesPart, 10);
+  return getDurationMinutesFromValue(normalized);
 }
 
 function setDurationFromMs(durationMs) {
@@ -1480,16 +1491,21 @@ function setDurationFromStartEndIfValid() {
   suppressTimeFieldSync = false;
 }
 
-function setEndFromStartDurationIfValid() {
+function setEndFromStartDurationIfValid(options = {}) {
   const startMs = parseDateTimeFromInputs(taskStartDateInput, taskStartTimeInput);
   if (Number.isNaN(startMs)) {
     return;
   }
 
-  taskDurationTimeInput.value = normalizeDurationValue(taskDurationTimeInput.value);
-  const durationMinutes = getDurationMinutes();
-  if (durationMinutes <= 0) {
+  const shouldNormalize = options.normalizeInput !== false;
+  const durationMinutes = shouldNormalize
+    ? getDurationMinutes()
+    : getDurationMinutesFromValue(taskDurationTimeInput.value);
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
     return;
+  }
+  if (shouldNormalize) {
+    taskDurationTimeInput.value = normalizeDurationValue(taskDurationTimeInput.value);
   }
 
   const computedEndMs = startMs + durationMinutes * 60000;
@@ -1503,9 +1519,9 @@ function onStartDateTimeChanged() {
     return;
   }
   clearManualInputBorders();
-  taskDurationTimeInput.value = normalizeDurationValue(taskDurationTimeInput.value);
-  if (getDurationMinutes() > 0) {
-    setEndFromStartDurationIfValid();
+  const durationMinutes = getDurationMinutesFromValue(taskDurationTimeInput.value);
+  if (Number.isFinite(durationMinutes) && durationMinutes > 0) {
+    setEndFromStartDurationIfValid({ normalizeInput: false });
     return;
   }
   setDurationFromStartEndIfValid();
@@ -1524,6 +1540,11 @@ function onDurationChanged() {
     return;
   }
   clearManualInputBorders();
+  setEndFromStartDurationIfValid({ normalizeInput: false });
+}
+
+function onDurationBlur() {
+  taskDurationTimeInput.value = normalizeDurationValue(taskDurationTimeInput.value);
   setEndFromStartDurationIfValid();
 }
 

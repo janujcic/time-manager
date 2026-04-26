@@ -256,7 +256,14 @@
         </div>
         <div class="task-time">
           <label for="task-duration-time">Duration (HH:MM):</label>
-          <input type="time" id="task-duration-time" step="60" value="00:00" />
+          <input
+            type="text"
+            id="task-duration-time"
+            inputmode="numeric"
+            pattern="\d{1,3}:[0-5]\d"
+            placeholder="00:00"
+            value="00:00"
+          />
         </div>
         <div class="task-time">
           <label for="task-end-date">End Time:</label>
@@ -276,4 +283,3 @@
   <script src="time_manager.js"></script>
 </body>
 </html>
-
