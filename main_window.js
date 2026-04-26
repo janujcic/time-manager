@@ -3,6 +3,8 @@ let currentTaskNotes = "";
 let snConfig = { enabled: false, instanceUrl: "", defaultRateTypeSysId: "", notesSuggestionWeeks: 4 };
 let snLookupCache = { fetchedAtMs: 0, tasks: [], categories: [], timeCodes: [], rateTypes: [] };
 let mainAllBlocks = [];
+let mainAssignmentSuggestionsOpen = false;
+let mainNoteSuggestionsOpen = false;
 
 const taskNameError = document.getElementById("task-name-error");
 const enterStartTask = document.querySelector(".enter-start-task");
@@ -18,6 +20,7 @@ const finishButton = document.getElementById("finish-button");
 const mainSnAssignmentWrap = document.getElementById("main-sn-assignment-wrap");
 const mainSnAssignmentInput = document.getElementById("main-sn-assignment-input");
 const mainSnAssignmentList = document.getElementById("main-sn-assignment-list");
+const mainSnAssignmentMenu = document.getElementById("main-sn-assignment-menu");
 const mainSnAssignmentError = document.getElementById("main-sn-assignment-error");
 const mainSnCodeWrap = document.getElementById("main-sn-code-wrap");
 const mainSnCodeSelect = document.getElementById("main-sn-code-select");
@@ -28,6 +31,7 @@ const mainSnRateTypeError = document.getElementById("main-sn-rate-type-error");
 const mainSnNotesWrap = document.getElementById("main-sn-notes-wrap");
 const mainSnNotesInput = document.getElementById("main-sn-notes-input");
 const mainSnNotesSuggestionList = document.getElementById("main-sn-notes-suggestion-list");
+const mainSnNotesMenu = document.getElementById("main-sn-notes-menu");
 const mainSnNotesError = document.getElementById("main-sn-notes-error");
 
 function showTaskNameError(message) {
@@ -134,6 +138,7 @@ function showRegistrationState() {
   runningTaskNotes.textContent = "";
   runningTaskNotes.style.display = "none";
   mainSnNotesInput.value = "";
+  hideMainNotesMenu();
   renderMainRateTypeOptions(snConfig.defaultRateTypeSysId || "");
   refreshMainCommentSuggestions();
   clearMainSnError();
@@ -183,7 +188,58 @@ function filterAssignmentOptions(queryText) {
   });
 }
 
+function hideMainAssignmentMenu() {
+  mainAssignmentSuggestionsOpen = false;
+  mainSnAssignmentMenu.classList.remove("open");
+  mainSnAssignmentMenu.innerHTML = "";
+  mainSnAssignmentInput.setAttribute("aria-expanded", "false");
+}
+
+function showMainAssignmentMenu() {
+  mainAssignmentSuggestionsOpen = true;
+  renderMainAssignmentOptions();
+}
+
+function selectMainAssignmentOption(item) {
+  if (!item) {
+    return;
+  }
+  mainSnAssignmentInput.value = item.label;
+  clearTaskNameError();
+  clearMainSnError();
+  hideMainAssignmentMenu();
+  renderMainAssignmentOptions(item.label);
+  refreshMainCommentSuggestions();
+}
+
+function renderMainAssignmentMenu(options) {
+  mainSnAssignmentMenu.innerHTML = "";
+  if (!mainAssignmentSuggestionsOpen || options.length === 0) {
+    mainSnAssignmentMenu.classList.remove("open");
+    mainSnAssignmentInput.setAttribute("aria-expanded", "false");
+    return;
+  }
+
+  options.forEach((item) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "autocomplete-option";
+    option.setAttribute("role", "option");
+    option.dataset.optionId = item.id;
+    option.textContent = item.label;
+    option.title = item.label;
+    mainSnAssignmentMenu.appendChild(option);
+  });
+
+  mainSnAssignmentMenu.classList.add("open");
+  mainSnAssignmentInput.setAttribute("aria-expanded", "true");
+}
+
 function renderMainAssignmentOptions(selectedLabel = "") {
+  if (selectedLabel) {
+    mainSnAssignmentInput.value = selectedLabel;
+  }
+
   const query = mainSnAssignmentInput.value;
   const options = filterAssignmentOptions(query);
   mainSnAssignmentList.innerHTML = "";
@@ -194,9 +250,7 @@ function renderMainAssignmentOptions(selectedLabel = "") {
     mainSnAssignmentList.appendChild(option);
   });
 
-  if (selectedLabel) {
-    mainSnAssignmentInput.value = selectedLabel;
-  }
+  renderMainAssignmentMenu(options);
 }
 
 function renderMainCodeOptions(selectedCodeSysId = "") {
@@ -274,32 +328,66 @@ function getSelectedAssignment() {
   return getAllAssignmentOptions().find((item) => item.label === typedValue) || null;
 }
 
-function getCategoryKeyFromAssignment(assignment) {
+function getCategoryIdentityFromAssignment(assignment) {
   if (!assignment || assignment.kind !== "category") {
-    return "";
+    return null;
   }
-  const sysId = String(assignment.data?.sys_id || "").trim();
-  if (sysId) {
-    return `sys:${sysId}`;
-  }
-  const categoryValue = String(assignment.data?.value || "").trim();
-  return categoryValue ? `value:${categoryValue}` : "";
+
+  return {
+    sysId: String(assignment.data?.sys_id || "").trim(),
+    value: String(assignment.data?.value || "").trim(),
+  };
 }
 
-function getCategoryKeyFromBlock(block) {
-  if (!block || block.snSelectionType !== "category") {
-    return "";
+function blockMatchesCategoryIdentity(block, categoryIdentity) {
+  if (!block || block.snSelectionType !== "category" || !categoryIdentity) {
+    return false;
   }
-  const sysId = String(block.snCategorySysId || "").trim();
-  if (sysId) {
-    return `sys:${sysId}`;
+
+  const blockSysId = String(block.snCategorySysId || "").trim();
+  if (categoryIdentity.sysId && blockSysId) {
+    return blockSysId === categoryIdentity.sysId;
   }
-  const categoryValue = String(block.snCategoryValue || "").trim();
-  return categoryValue ? `value:${categoryValue}` : "";
+
+  const blockValue = String(block.snCategoryValue || "").trim();
+  if (categoryIdentity.value && blockValue) {
+    return blockValue === categoryIdentity.value;
+  }
+
+  return false;
 }
 
-function buildCategoryNoteSuggestions(blocks, categoryKey, queryText, weeks) {
-  if (!categoryKey) {
+function getTimeCodeIdentityFromCode(code) {
+  if (!code) {
+    return null;
+  }
+
+  return {
+    sysId: String(code.sys_id || "").trim(),
+    value: String(code.u_time_card_code || "").trim(),
+  };
+}
+
+function blockMatchesTimeCodeIdentity(block, timeCodeIdentity) {
+  if (!block || !timeCodeIdentity) {
+    return false;
+  }
+
+  const blockCodeSysId = String(block.snCodeSysId || "").trim();
+  if (timeCodeIdentity.sysId && blockCodeSysId) {
+    return blockCodeSysId === timeCodeIdentity.sysId;
+  }
+
+  const blockCodeValue = String(block.snCodeValue || "").trim();
+  if (timeCodeIdentity.value && blockCodeValue) {
+    return blockCodeValue === timeCodeIdentity.value;
+  }
+
+  return false;
+}
+
+function buildCategoryNoteSuggestions(blocks, categoryIdentity, timeCodeIdentity, queryText, weeks) {
+  if (!categoryIdentity || !timeCodeIdentity) {
     return [];
   }
 
@@ -308,7 +396,10 @@ function buildCategoryNoteSuggestions(blocks, categoryKey, queryText, weeks) {
   const dedupeByText = new Map();
 
   for (const block of Array.isArray(blocks) ? blocks : []) {
-    if (getCategoryKeyFromBlock(block) !== categoryKey) {
+    if (!blockMatchesCategoryIdentity(block, categoryIdentity)) {
+      continue;
+    }
+    if (!blockMatchesTimeCodeIdentity(block, timeCodeIdentity)) {
       continue;
     }
     const blockStartMs = Number(block.startMs);
@@ -345,19 +436,63 @@ function renderMainCommentSuggestions(suggestions) {
     option.value = suggestion;
     mainSnNotesSuggestionList.appendChild(option);
   }
+  renderMainNotesMenu(suggestions);
+}
+
+function hideMainNotesMenu() {
+  mainNoteSuggestionsOpen = false;
+  mainSnNotesMenu.classList.remove("open");
+  mainSnNotesMenu.innerHTML = "";
+  mainSnNotesInput.setAttribute("aria-expanded", "false");
+}
+
+function showMainNotesMenu() {
+  mainNoteSuggestionsOpen = true;
+  refreshMainCommentSuggestions();
+}
+
+function selectMainNoteSuggestion(noteText) {
+  mainSnNotesInput.value = noteText;
+  clearMainSnError();
+  hideMainNotesMenu();
+  refreshMainCommentSuggestions();
+}
+
+function renderMainNotesMenu(suggestions) {
+  mainSnNotesMenu.innerHTML = "";
+  if (!mainNoteSuggestionsOpen || !Array.isArray(suggestions) || suggestions.length === 0) {
+    mainSnNotesMenu.classList.remove("open");
+    mainSnNotesInput.setAttribute("aria-expanded", "false");
+    return;
+  }
+
+  suggestions.forEach((suggestion) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "autocomplete-option";
+    option.setAttribute("role", "option");
+    option.textContent = suggestion;
+    option.title = suggestion;
+    mainSnNotesMenu.appendChild(option);
+  });
+
+  mainSnNotesMenu.classList.add("open");
+  mainSnNotesInput.setAttribute("aria-expanded", "true");
 }
 
 function refreshMainCommentSuggestions() {
   const selectedAssignment = getSelectedAssignment();
-  const categoryKey = getCategoryKeyFromAssignment(selectedAssignment);
-  if (!categoryKey) {
+  const categoryIdentity = getCategoryIdentityFromAssignment(selectedAssignment);
+  const timeCodeIdentity = getTimeCodeIdentityFromCode(getSelectedCodeData());
+  if (!categoryIdentity || !timeCodeIdentity) {
     renderMainCommentSuggestions([]);
     return;
   }
 
   const suggestions = buildCategoryNoteSuggestions(
     mainAllBlocks,
-    categoryKey,
+    categoryIdentity,
+    timeCodeIdentity,
     mainSnNotesInput.value,
     snConfig.notesSuggestionWeeks
   );
@@ -469,7 +604,17 @@ function refreshFromBackground() {
 document.addEventListener("DOMContentLoaded", () => {
   loadMainSnConfigAndLookups();
   loadMainBlocksForSuggestions();
+  mainSnAssignmentInput.addEventListener("focus", showMainAssignmentMenu);
+  mainSnAssignmentInput.addEventListener("blur", () => {
+    window.setTimeout(hideMainAssignmentMenu, 120);
+  });
+  mainSnAssignmentInput.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      hideMainAssignmentMenu();
+    }
+  });
   mainSnAssignmentInput.addEventListener("input", () => {
+    mainAssignmentSuggestionsOpen = true;
     if (mainSnAssignmentInput.value.trim()) {
       clearTaskNameError();
     }
@@ -477,15 +622,47 @@ document.addEventListener("DOMContentLoaded", () => {
     renderMainAssignmentOptions();
     refreshMainCommentSuggestions();
   });
+  mainSnAssignmentMenu.addEventListener("mousedown", (event) => {
+    const option = event.target.closest(".autocomplete-option");
+    if (!option) {
+      return;
+    }
+
+    event.preventDefault();
+    const selectedOption = getAllAssignmentOptions().find(
+      (item) => item.id === option.dataset.optionId
+    );
+    selectMainAssignmentOption(selectedOption);
+  });
   mainSnCodeSelect.addEventListener("change", () => {
     clearMainSnError();
+    refreshMainCommentSuggestions();
   });
   mainSnRateTypeSelect.addEventListener("change", () => {
     clearMainSnError();
   });
   mainSnNotesInput.addEventListener("input", () => {
+    mainNoteSuggestionsOpen = true;
     clearMainSnError();
     refreshMainCommentSuggestions();
+  });
+  mainSnNotesInput.addEventListener("focus", showMainNotesMenu);
+  mainSnNotesInput.addEventListener("blur", () => {
+    window.setTimeout(hideMainNotesMenu, 120);
+  });
+  mainSnNotesInput.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      hideMainNotesMenu();
+    }
+  });
+  mainSnNotesMenu.addEventListener("mousedown", (event) => {
+    const option = event.target.closest(".autocomplete-option");
+    if (!option) {
+      return;
+    }
+
+    event.preventDefault();
+    selectMainNoteSuggestion(option.textContent || "");
   });
   refreshFromBackground();
 });

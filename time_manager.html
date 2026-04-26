@@ -241,10 +241,14 @@
           <input
             type="text"
             id="sn-comment-input"
-            list="sn-comment-suggestion-list"
+            autocomplete="off"
+            aria-autocomplete="list"
+            aria-expanded="false"
+            aria-controls="sn-comment-menu"
             placeholder="Optional for task, required for category"
           />
           <datalist id="sn-comment-suggestion-list"></datalist>
+          <div id="sn-comment-menu" class="autocomplete-menu" role="listbox"></div>
         </div>
         <div class="task-time">
           <label for="task-start-date">Start Time:</label>

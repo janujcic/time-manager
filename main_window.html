@@ -6,7 +6,7 @@
   <link rel="stylesheet" href="shared_styles.css" />
 </head>
 
-<body>
+<body class="main-popup-page">
   <h2>Task Registration</h2>
   <div class="enter-start-task">
     <p>What would you like to focus on?</p>
@@ -16,10 +16,14 @@
         <input
           type="text"
           id="main-sn-assignment-input"
-          list="main-sn-assignment-list"
+          autocomplete="off"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="main-sn-assignment-menu"
           placeholder="Enter task or search assigned tasks/categories"
         />
         <datalist id="main-sn-assignment-list"></datalist>
+        <div id="main-sn-assignment-menu" class="autocomplete-menu" role="listbox"></div>
         <p id="main-sn-assignment-error" class="field-error" role="alert" aria-live="polite"></p>
       </div>
       <div id="main-sn-code-wrap" class="main-sn-timecard-wrap" style="display: none">
@@ -37,10 +41,14 @@
         <input
           type="text"
           id="main-sn-notes-input"
-          list="main-sn-notes-suggestion-list"
+          autocomplete="off"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="main-sn-notes-menu"
           placeholder="Optional for task, required for category"
         />
         <datalist id="main-sn-notes-suggestion-list"></datalist>
+        <div id="main-sn-notes-menu" class="autocomplete-menu" role="listbox"></div>
         <p id="main-sn-notes-error" class="field-error" role="alert" aria-live="polite"></p>
       </div>
     </div>

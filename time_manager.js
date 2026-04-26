@@ -18,6 +18,7 @@ const snRateTypeSelect = document.getElementById("sn-rate-type-select");
 const snCommentWrap = document.getElementById("sn-comment-wrap");
 const snCommentInput = document.getElementById("sn-comment-input");
 const snCommentSuggestionList = document.getElementById("sn-comment-suggestion-list");
+const snCommentMenu = document.getElementById("sn-comment-menu");
 const blockLogTableBody = document.querySelector("#block-log-table tbody");
 
 const rangePresetSelect = document.getElementById("range-preset");
@@ -80,6 +81,7 @@ const BLOCK_PAGE_SIZE = 5;
 let currentBlockPage = 1;
 let suppressTimeFieldSync = false;
 let areBlocksExpanded = false;
+let commentSuggestionsOpen = false;
 const DEFAULT_DASHBOARD_RANGE_PRESET = "this-week";
 const DASHBOARD_PREFERENCES_KEY = "dashboardPreferences";
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -157,11 +159,33 @@ function bindDashboardEvents() {
   });
   toggleBlocksButton.addEventListener("click", toggleTimeBlocksVisibility);
   taskNameInput.addEventListener("input", onTaskNameInputChanged);
-  snCodeSelect.addEventListener("change", clearManualInputBorders);
-  snRateTypeSelect.addEventListener("change", clearManualInputBorders);
-  snCommentInput.addEventListener("input", () => {
+  snCodeSelect.addEventListener("change", () => {
     clearManualInputBorders();
     refreshCommentSuggestions();
+  });
+  snRateTypeSelect.addEventListener("change", clearManualInputBorders);
+  snCommentInput.addEventListener("input", () => {
+    commentSuggestionsOpen = true;
+    clearManualInputBorders();
+    refreshCommentSuggestions();
+  });
+  snCommentInput.addEventListener("focus", showCommentSuggestionsMenu);
+  snCommentInput.addEventListener("blur", () => {
+    window.setTimeout(hideCommentSuggestionsMenu, 120);
+  });
+  snCommentInput.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      hideCommentSuggestionsMenu();
+    }
+  });
+  snCommentMenu.addEventListener("mousedown", (event) => {
+    const option = event.target.closest(".autocomplete-option");
+    if (!option) {
+      return;
+    }
+
+    event.preventDefault();
+    selectCommentSuggestion(option.textContent || "");
   });
   snNotesSuggestionWeeksInput.addEventListener("input", () => {
     snNotesSuggestionWeeksInput.classList.remove("input-error");
@@ -562,32 +586,66 @@ function getSelectedAssignment() {
   return getAssignmentOptions("").find((item) => item.label === typedValue) || null;
 }
 
-function getCategoryKeyFromAssignment(assignment) {
+function getCategoryIdentityFromAssignment(assignment) {
   if (!assignment || assignment.kind !== "category") {
-    return "";
+    return null;
   }
-  const sysId = String(assignment.data?.sys_id || "").trim();
-  if (sysId) {
-    return `sys:${sysId}`;
-  }
-  const categoryValue = String(assignment.data?.value || "").trim();
-  return categoryValue ? `value:${categoryValue}` : "";
+
+  return {
+    sysId: String(assignment.data?.sys_id || "").trim(),
+    value: String(assignment.data?.value || "").trim(),
+  };
 }
 
-function getCategoryKeyFromBlock(block) {
-  if (!block || block.snSelectionType !== "category") {
-    return "";
+function blockMatchesCategoryIdentity(block, categoryIdentity) {
+  if (!block || block.snSelectionType !== "category" || !categoryIdentity) {
+    return false;
   }
-  const sysId = String(block.snCategorySysId || "").trim();
-  if (sysId) {
-    return `sys:${sysId}`;
+
+  const blockSysId = String(block.snCategorySysId || "").trim();
+  if (categoryIdentity.sysId && blockSysId) {
+    return blockSysId === categoryIdentity.sysId;
   }
-  const categoryValue = String(block.snCategoryValue || "").trim();
-  return categoryValue ? `value:${categoryValue}` : "";
+
+  const blockValue = String(block.snCategoryValue || "").trim();
+  if (categoryIdentity.value && blockValue) {
+    return blockValue === categoryIdentity.value;
+  }
+
+  return false;
 }
 
-function buildCategoryNoteSuggestions(blocks, categoryKey, queryText, weeks) {
-  if (!categoryKey) {
+function getTimeCodeIdentityFromCode(code) {
+  if (!code) {
+    return null;
+  }
+
+  return {
+    sysId: String(code.sys_id || "").trim(),
+    value: String(code.u_time_card_code || "").trim(),
+  };
+}
+
+function blockMatchesTimeCodeIdentity(block, timeCodeIdentity) {
+  if (!block || !timeCodeIdentity) {
+    return false;
+  }
+
+  const blockCodeSysId = String(block.snCodeSysId || "").trim();
+  if (timeCodeIdentity.sysId && blockCodeSysId) {
+    return blockCodeSysId === timeCodeIdentity.sysId;
+  }
+
+  const blockCodeValue = String(block.snCodeValue || "").trim();
+  if (timeCodeIdentity.value && blockCodeValue) {
+    return blockCodeValue === timeCodeIdentity.value;
+  }
+
+  return false;
+}
+
+function buildCategoryNoteSuggestions(blocks, categoryIdentity, timeCodeIdentity, queryText, weeks) {
+  if (!categoryIdentity || !timeCodeIdentity) {
     return [];
   }
 
@@ -596,7 +654,10 @@ function buildCategoryNoteSuggestions(blocks, categoryKey, queryText, weeks) {
   const dedupeByText = new Map();
 
   for (const block of Array.isArray(blocks) ? blocks : []) {
-    if (getCategoryKeyFromBlock(block) !== categoryKey) {
+    if (!blockMatchesCategoryIdentity(block, categoryIdentity)) {
+      continue;
+    }
+    if (!blockMatchesTimeCodeIdentity(block, timeCodeIdentity)) {
       continue;
     }
 
@@ -636,19 +697,63 @@ function renderCommentSuggestions(suggestions) {
     option.value = suggestion;
     snCommentSuggestionList.appendChild(option);
   }
+  renderCommentSuggestionsMenu(suggestions);
+}
+
+function hideCommentSuggestionsMenu() {
+  commentSuggestionsOpen = false;
+  snCommentMenu.classList.remove("open");
+  snCommentMenu.innerHTML = "";
+  snCommentInput.setAttribute("aria-expanded", "false");
+}
+
+function showCommentSuggestionsMenu() {
+  commentSuggestionsOpen = true;
+  refreshCommentSuggestions();
+}
+
+function selectCommentSuggestion(noteText) {
+  snCommentInput.value = noteText;
+  clearManualInputBorders();
+  hideCommentSuggestionsMenu();
+  refreshCommentSuggestions();
+}
+
+function renderCommentSuggestionsMenu(suggestions) {
+  snCommentMenu.innerHTML = "";
+  if (!commentSuggestionsOpen || !Array.isArray(suggestions) || suggestions.length === 0) {
+    snCommentMenu.classList.remove("open");
+    snCommentInput.setAttribute("aria-expanded", "false");
+    return;
+  }
+
+  suggestions.forEach((suggestion) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "autocomplete-option";
+    option.setAttribute("role", "option");
+    option.textContent = suggestion;
+    option.title = suggestion;
+    snCommentMenu.appendChild(option);
+  });
+
+  snCommentMenu.classList.add("open");
+  snCommentInput.setAttribute("aria-expanded", "true");
 }
 
 function refreshCommentSuggestions() {
   const selectedAssignment = getSelectedAssignment();
-  const categoryKey = getCategoryKeyFromAssignment(selectedAssignment);
-  if (!categoryKey) {
+  const categoryIdentity = getCategoryIdentityFromAssignment(selectedAssignment);
+  const timeCodeIdentity = getTimeCodeIdentityFromCode(getSelectedCode());
+  if (!categoryIdentity || !timeCodeIdentity) {
     renderCommentSuggestions([]);
     return;
   }
 
   const suggestions = buildCategoryNoteSuggestions(
     allBlocks,
-    categoryKey,
+    categoryIdentity,
+    timeCodeIdentity,
     snCommentInput.value,
     snConfig.notesSuggestionWeeks
   );
@@ -1566,6 +1671,7 @@ function resetManualForm() {
   taskEndTimeInput.value = "";
   taskDurationTimeInput.value = "00:00";
   snCommentInput.value = "";
+  hideCommentSuggestionsMenu();
   renderAssignmentOptions();
   renderCodeOptions();
   renderRateTypeOptions(snConfig.defaultRateTypeSysId || "");
