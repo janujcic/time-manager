@@ -534,6 +534,7 @@ startButton.addEventListener("click", () => {
         (category) => category.value === "task_work"
       );
       taskData.snCategorySysId = taskWorkCategory?.sys_id || "";
+      taskData.snCommentText = snCommentText;
     } else if (selectedAssignment?.kind === "category") {
       taskData.snSelectionType = "category";
       taskData.snCategorySysId = selectedAssignment.data.sys_id || "";
