@@ -25,6 +25,7 @@ For focused work, use `npm run test:unit`, `npm run test:chromium`, or `npm run 
 
 Useful project documentation:
 
+- [Functional overview](docs/functional-overview.md)
 - [Architecture](docs/architecture.md)
 - [ServiceNow integration](docs/servicenow-integration.md)
 - [Manual test plan](docs/manual-test-plan.md)

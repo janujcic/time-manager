@@ -11,7 +11,7 @@ This is a runtime-dependency-free Manifest V3 browser extension for tracking foc
 - `sn_page_bridge.js` is the only code that calls ServiceNow APIs; it uses the user's existing authenticated browser session.
 - `shared_styles.css` contains the shared UI styles.
 
-Read `docs/architecture.md` before changing data flow or module responsibilities. Read `docs/servicenow-integration.md` before changing ServiceNow behavior.
+Read `docs/functional-overview.md` before proposing or changing user-visible behavior. Read `docs/architecture.md` before changing data flow or module responsibilities. Read `docs/servicenow-integration.md` before changing ServiceNow behavior.
 
 ## Engineering rules
 
@@ -26,6 +26,7 @@ Read `docs/architecture.md` before changing data flow or module responsibilities
 ## Change and verification workflow
 
 - Clarify behavior or product choices with the user when they are ambiguous or would alter data, sync behavior, or the UI workflow.
+- Before implementing a behavior change, compare it with `docs/functional-overview.md` and tell the user what capability, rule, or limitation would change. After the user confirms the implemented behavior, update that overview when it is affected. Do not update it for behavior-preserving refactors, tests, or tooling.
 - Use red-green-refactor development for behavior changes: write a focused failing test first when the logic can be isolated, make it pass with the smallest change, then improve the code.
 - For logic that needs tests, prefer a small pure module and Node's built-in test runner. For existing browser scripts, use the test harnesses to execute the real source with mocked browser APIs. Do not add an empty test directory or a test framework without a real first test.
 - Run `npm run check` after documentation changes. Run `npm test` after production JavaScript, HTML, CSS, or manifest changes.
