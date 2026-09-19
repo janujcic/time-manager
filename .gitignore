@@ -3,3 +3,7 @@ web-ext-artifacts/
 dist
 research.md
 plan.md
+node_modules/
+test-results/
+playwright-report/
+blob-report/

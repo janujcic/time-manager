@@ -4,6 +4,20 @@
   "version": "2.13.0",
   "description": "Dependency-free browser extension for focused time tracking.",
   "scripts": {
-    "check": "node scripts/check.mjs"
+    "check": "node scripts/check.mjs",
+    "install:chromium": "node scripts/install-chromium.mjs",
+    "lint:extension": "web-ext lint --source-dir .",
+    "test": "node scripts/run-all-tests.mjs",
+    "test:chromium": "node scripts/run-chromium-tests.mjs",
+    "test:headed": "node scripts/run-chromium-tests.mjs --headed",
+    "test:unit": "node scripts/run-unit-tests.mjs",
+    "firefox": "web-ext run --source-dir ."
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "web-ext": "^10.6.0"
   }
 }
