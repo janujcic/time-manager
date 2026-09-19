@@ -1,0 +1,9 @@
+{
+  "name": "time-manager-extension",
+  "private": true,
+  "version": "2.13.0",
+  "description": "Dependency-free browser extension for focused time tracking.",
+  "scripts": {
+    "check": "node scripts/check.mjs"
+  }
+}
