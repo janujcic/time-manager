@@ -38,11 +38,22 @@ function createStorage(initialValues) {
   };
 }
 
-export async function loadBackground({ initialStorage = {}, nowMs = Date.now() } = {}) {
+export async function loadBackground({
+  initialStorage = {},
+  nowMs = Date.now(),
+  hasPermission = false,
+  grantPermission = false,
+  tabs = [],
+  onTabMessage = () => ({ status: "success" }),
+} = {}) {
   const source = await readFile(path.join(projectRoot, "background.js"), "utf8");
   const storage = createStorage(initialStorage);
   let currentNowMs = nowMs;
   let intervalId = 0;
+  let generatedBlockCount = 0;
+  const actionCalls = [];
+  const permissionCalls = [];
+  const tabMessages = [];
 
   class ControlledDate extends Date {
     constructor(...args) {
@@ -56,22 +67,27 @@ export async function loadBackground({ initialStorage = {}, nowMs = Date.now() }
 
   const chrome = {
     action: {
-      setBadgeText(_details, callback) {
+      setBadgeText(details, callback) {
+        actionCalls.push({ method: "setBadgeText", details: copy(details) });
         callback?.();
       },
-      setBadgeBackgroundColor(_details, callback) {
+      setBadgeBackgroundColor(details, callback) {
+        actionCalls.push({ method: "setBadgeBackgroundColor", details: copy(details) });
         callback?.();
       },
-      setTitle(_details, callback) {
+      setTitle(details, callback) {
+        actionCalls.push({ method: "setTitle", details: copy(details) });
         callback?.();
       },
     },
     permissions: {
-      contains(_details, callback) {
-        callback(false);
+      contains(details, callback) {
+        permissionCalls.push({ method: "contains", details: copy(details) });
+        callback(hasPermission);
       },
-      request(_details, callback) {
-        callback(false);
+      request(details, callback) {
+        permissionCalls.push({ method: "request", details: copy(details) });
+        callback(grantPermission);
       },
     },
     runtime: {
@@ -87,10 +103,17 @@ export async function loadBackground({ initialStorage = {}, nowMs = Date.now() }
     storage: { local: storage },
     tabs: {
       query(_details, callback) {
-        callback([]);
+        callback(copy(tabs));
       },
-      sendMessage(_tabId, _message, callback) {
-        callback(undefined);
+      sendMessage(tabId, message, callback) {
+        tabMessages.push({ tabId, message: copy(message) });
+        try {
+          callback(copy(onTabMessage(tabId, message)));
+        } catch (error) {
+          chrome.runtime.lastError = { message: error.message };
+          callback(undefined);
+          chrome.runtime.lastError = null;
+        }
       },
     },
   };
@@ -99,7 +122,12 @@ export async function loadBackground({ initialStorage = {}, nowMs = Date.now() }
     URL,
     chrome,
     console,
-    crypto: { randomUUID: () => "test-block-id" },
+    crypto: {
+      randomUUID: () => {
+        generatedBlockCount += 1;
+        return generatedBlockCount === 1 ? "test-block-id" : `test-block-id-${generatedBlockCount}`;
+      },
+    },
     Date: ControlledDate,
     setInterval() {
       intervalId += 1;
@@ -115,10 +143,18 @@ export async function loadBackground({ initialStorage = {}, nowMs = Date.now() }
       aggregateBlocksForSync: (...args) => JSON.parse(JSON.stringify(aggregateBlocksForSync(...args))),
       getBlocks: async () => JSON.parse(JSON.stringify(await getTimeBlocks())),
       getTimerData: () => JSON.parse(JSON.stringify(timerData)),
+      getConfig: () => getServiceNowConfig(),
+      getCachedLookups: () => getCachedLookups(),
+      saveConfig: saveServiceNowConfig,
+      connectServiceNowSession,
+      fetchLookups: serviceNowFetchLookups,
+      syncVisibleBlocks: serviceNowSyncVisibleBlocks,
       startTimer,
       stopTimer,
       finishTimer,
       saveManualSession,
+      updateTimeBlock,
+      deleteTimeBlock,
     };
   `;
   vm.createContext(sandbox);
@@ -135,6 +171,14 @@ export async function loadBackground({ initialStorage = {}, nowMs = Date.now() }
     stopTimer: async () => copy(await rawApi.stopTimer()),
     finishTimer: async () => copy(await rawApi.finishTimer()),
     saveManualSession: async (...args) => copy(await rawApi.saveManualSession(...args)),
+    updateTimeBlock: async (...args) => copy(await rawApi.updateTimeBlock(...args)),
+    deleteTimeBlock: async (...args) => copy(await rawApi.deleteTimeBlock(...args)),
+    getConfig: async () => copy(await rawApi.getConfig()),
+    getCachedLookups: async () => copy(await rawApi.getCachedLookups()),
+    saveConfig: async (...args) => copy(await rawApi.saveConfig(...args)),
+    connectServiceNowSession: async () => copy(await rawApi.connectServiceNowSession()),
+    fetchLookups: async () => copy(await rawApi.fetchLookups()),
+    syncVisibleBlocks: async (...args) => copy(await rawApi.syncVisibleBlocks(...args)),
   };
 
   return {
@@ -143,5 +187,8 @@ export async function loadBackground({ initialStorage = {}, nowMs = Date.now() }
       currentNowMs = nextNowMs;
     },
     storage,
+    actionCalls,
+    permissionCalls,
+    tabMessages,
   };
 }

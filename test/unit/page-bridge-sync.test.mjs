@@ -41,7 +41,7 @@ function group(overrides = {}) {
   };
 }
 
-test("sync creates a time card with the exact grouped hours and metadata", async () => {
+test("[F-SYNC-05] sync creates a time card with the exact grouped hours and metadata", async () => {
   const calls = [];
   const bridge = await loadPageBridge(async (url, options = {}) => {
     calls.push({ url, options: JSON.parse(JSON.stringify(options)) });
@@ -93,7 +93,7 @@ test("sync creates a time card with the exact grouped hours and metadata", async
   });
 });
 
-test("sync updates only touched days and preserves existing hours on other days", async () => {
+test("[F-SYNC-05] sync updates only touched days and preserves existing hours on other days", async () => {
   const calls = [];
   const bridge = await loadPageBridge(async (url, options = {}) => {
     calls.push({ url, options: JSON.parse(JSON.stringify(options)) });
@@ -125,7 +125,7 @@ test("sync updates only touched days and preserves existing hours on other days"
   assert.equal(update.total, 6.5);
 });
 
-test("sync skips submitted matching time cards without sending a write request", async () => {
+test("[F-SYNC-05] sync skips submitted matching time cards without sending a write request", async () => {
   const calls = [];
   const bridge = await loadPageBridge(async (url, options = {}) => {
     calls.push({ url, options: JSON.parse(JSON.stringify(options)) });

@@ -29,7 +29,7 @@ function taskBlock(overrides = {}) {
   };
 }
 
-test("stopping a timer stores one completed block and finish clears the runtime", async () => {
+test("[F-TIMER-04] stopping a timer stores one completed block and finish clears the runtime", async () => {
   const startMs = localTime(2026, 0, 5, 9, 0);
   const { api, setNow, storage } = await loadBackground({ nowMs: startMs });
 
@@ -68,7 +68,7 @@ test("stopping a timer stores one completed block and finish clears the runtime"
   assert.equal(api.getTimerData().savedTaskName, "");
 });
 
-test("a running timer restores its task and elapsed time after a service-worker restart", async () => {
+test("[F-TIMER-05] a running timer restores its task and elapsed time after a service-worker restart", async () => {
   const nowMs = localTime(2026, 0, 5, 10, 0);
   const { api } = await loadBackground({
     nowMs,

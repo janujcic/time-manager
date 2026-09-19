@@ -8,6 +8,7 @@
     "install:chromium": "node scripts/install-chromium.mjs",
     "lint:extension": "web-ext lint --source-dir .",
     "test": "node scripts/run-all-tests.mjs",
+    "test:coverage": "node scripts/check-functional-coverage.mjs",
     "test:chromium": "node scripts/run-chromium-tests.mjs",
     "test:headed": "node scripts/run-chromium-tests.mjs --headed",
     "test:unit": "node scripts/run-unit-tests.mjs",

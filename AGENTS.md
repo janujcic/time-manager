@@ -27,6 +27,7 @@ Read `docs/functional-overview.md` before proposing or changing user-visible beh
 
 - Clarify behavior or product choices with the user when they are ambiguous or would alter data, sync behavior, or the UI workflow.
 - Before implementing a behavior change, compare it with `docs/functional-overview.md` and tell the user what capability, rule, or limitation would change. After the user confirms the implemented behavior, update that overview when it is affected. Do not update it for behavior-preserving refactors, tests, or tooling.
+- Before changing a listed capability, read `docs/functional-test-matrix.md`. Add or update its coverage decision and use its feature ID in the relevant automated test. A manual check is valid only when browser interaction is essential; do not describe a planned test as coverage.
 - Use red-green-refactor development for behavior changes: write a focused failing test first when the logic can be isolated, make it pass with the smallest change, then improve the code.
 - For logic that needs tests, prefer a small pure module and Node's built-in test runner. For existing browser scripts, use the test harnesses to execute the real source with mocked browser APIs. Do not add an empty test directory or a test framework without a real first test.
 - Run `npm run check` after documentation changes. Run `npm test` after production JavaScript, HTML, CSS, or manifest changes.

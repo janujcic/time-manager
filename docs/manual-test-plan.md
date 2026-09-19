@@ -5,7 +5,7 @@ Run `npm test` after production-code or manifest changes. It checks syntax and t
 ## Load and basic timer
 
 1. Load the repository root as an unpacked extension and open the popup.
-2. Enter a task, start it, confirm the popup and extension badge show a running timer.
+2. [F-TIMER-02] Enter a task, start it, confirm the popup and extension badge show a running timer.
 3. Stop it, confirm a timer-sourced block appears in the dashboard, then resume and stop again.
 4. Finish the task and confirm the popup returns to task registration.
 5. Reload the extension while a timer is running; reopen the popup and confirm elapsed time continues.
