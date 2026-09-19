@@ -2,7 +2,7 @@
 
 ## Purpose and structure
 
-This is a dependency-free Manifest V3 browser extension for tracking focused work and, when enabled, syncing time cards to ServiceNow.
+This is a runtime-dependency-free Manifest V3 browser extension for tracking focused work and, when enabled, syncing time cards to ServiceNow.
 
 - `background.js` owns persisted state, timer lifecycle, extension action state, and ServiceNow orchestration.
 - `main_window.*` is the extension-action popup for starting, stopping, resuming, and finishing a timer.
@@ -16,7 +16,7 @@ Read `docs/architecture.md` before changing data flow or module responsibilities
 ## Engineering rules
 
 - Write clear, user-understandable code. Prefer descriptive names, small focused functions, and plain control flow over clever abstractions.
-- Preserve existing browser compatibility and keep the extension dependency-free unless the task clearly requires a dependency.
+- Preserve existing browser compatibility and keep runtime code dependency-free unless the task clearly requires a dependency.
 - Keep UI code in its window script. Keep shared state, storage access, and ServiceNow orchestration in `background.js`.
 - Never store ServiceNow credentials, cookies, or CSRF tokens. Do not bypass the content/page bridge for ServiceNow requests.
 - Treat stored data as durable user data. Maintain backward compatibility for storage keys and block fields, and add migrations when a stored shape changes.
@@ -27,11 +27,11 @@ Read `docs/architecture.md` before changing data flow or module responsibilities
 
 - Clarify behavior or product choices with the user when they are ambiguous or would alter data, sync behavior, or the UI workflow.
 - Use red-green-refactor development for behavior changes: write a focused failing test first when the logic can be isolated, make it pass with the smallest change, then improve the code.
-- For logic that needs tests, prefer extracting a small pure module and testing it with Node's built-in test runner. Do not add an empty test directory or a test framework without a real first test.
-- Run `npm run check` after JavaScript, HTML, manifest, or documentation changes.
+- For logic that needs tests, prefer a small pure module and Node's built-in test runner. For existing browser scripts, use the test harnesses to execute the real source with mocked browser APIs. Do not add an empty test directory or a test framework without a real first test.
+- Run `npm run check` after documentation changes. Run `npm test` after production JavaScript, HTML, CSS, or manifest changes.
 - Run the relevant cases in `docs/manual-test-plan.md` for user-facing or ServiceNow changes. Say clearly when browser or ServiceNow checks could not be performed.
 - Update the relevant documentation when changing architecture, persisted data, supported messages, ServiceNow behavior, or manual verification steps.
 
 ## Done means
 
-A change is complete when it is scoped to the request, understandable to a future maintainer, checked with `npm run check`, manually verified where applicable, and documented when it changes a documented contract.
+A change is complete when it is scoped to the request, understandable to a future maintainer, checked with the applicable local command, manually verified where applicable, and documented when it changes a documented contract.

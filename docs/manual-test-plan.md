@@ -1,6 +1,6 @@
 # Manual Test Plan
 
-Run the relevant checks after a user-facing change. Use a non-production ServiceNow instance for integration checks.
+Run `npm test` after production-code or manifest changes. It checks syntax and the manifest, validates Firefox compatibility, tests timer and sync-data logic, and runs the Chromium user-flow tests. These automated tests never connect to ServiceNow.
 
 ## Load and basic timer
 
@@ -17,12 +17,11 @@ Run the relevant checks after a user-facing change. Use a non-production Service
 3. Change range and day/week grouping controls; confirm only matching blocks contribute to totals.
 4. Close and reopen the dashboard; confirm stored blocks and the selected range preset remain available.
 
-## ServiceNow, when changed
+## Firefox smoke test
 
-1. With integration disabled, confirm ordinary local tracking still works.
-2. Enable it with an invalid URL and confirm saving explains the requirement for an HTTPS origin.
-3. With a signed-in ServiceNow tab open, connect and refresh lookup data.
-4. Create one valid task-linked entry and one category entry with notes and a time code.
-5. Sync a bounded range and verify the report. Check that submitted matching cards are skipped, not modified.
+1. Run `npm run lint:extension` and review any warnings. The current baseline has warnings related to existing Firefox compatibility declarations and dynamic table rendering; it has no lint errors.
+2. Run `npm run firefox` to launch the extension temporarily in Firefox. It reloads source changes while running.
+3. Repeat the Load and basic timer checks above.
+4. Repeat the Dashboard and stored blocks checks above.
 
-Do not test sync writes against production data unless the user has explicitly approved that scope.
+No ServiceNow connection or sync write is part of this smoke test. Sync grouping and outgoing payloads are covered by local fixture tests.

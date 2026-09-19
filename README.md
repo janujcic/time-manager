@@ -8,11 +8,20 @@ The task switching should be frictionless and seamless to do. This will allow fo
 
 This is a plain JavaScript Manifest V3 extension with no build step or runtime dependencies. Load the repository root as an unpacked extension in a Chromium-based browser, then reload the extension after source changes.
 
-Run the available automated checks with:
+Install the local development dependencies and Chromium test browser once:
 
 ```sh
-npm run check
+npm install
+npm run install:chromium
 ```
+
+Run the full local validation suite after production-code or manifest changes:
+
+```sh
+npm test
+```
+
+For focused work, use `npm run test:unit`, `npm run test:chromium`, or `npm run test:headed`. Run `npm run firefox` for the manual Firefox smoke test.
 
 Useful project documentation:
 
