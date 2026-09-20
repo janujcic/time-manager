@@ -1,0 +1,9 @@
+  {
+    "summary": {
+      "en-US": "Track focused work locally and optionally sync time to ServiceNow."
+    },
+    "categories": ["other"],
+    "version": {
+      "license": "MIT"
+    }
+  }
