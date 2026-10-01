@@ -64,7 +64,7 @@ test("[F-TIMER-04] stopping a timer stores one completed block and finish clears
   assert.equal(api.getTimerData().elapsedTime, 90 * MINUTE_MS);
 
   await api.finishTimer();
-  assert.equal(storage.snapshot().timer_runtime, null);
+  assert.equal(storage.snapshot().tm_profile_default_timerRuntime, null);
   assert.equal(api.getTimerData().savedTaskName, "");
 });
 

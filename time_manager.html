@@ -7,6 +7,10 @@
 <body class="dashboard-page">
   <div class="dashboard-header">
     <h2>Task Dashboard</h2>
+    <div class="profile-bar">
+      <label for="dashboard-profile-select">Profile</label>
+      <select id="dashboard-profile-select" aria-label="Active profile"></select>
+    </div>
     <p id="log-display" class="dashboard-status"></p>
   </div>
 
@@ -14,6 +18,7 @@
     <button id="dashboard-tab-button" class="tab-button active" type="button">Dashboard</button>
     <button id="servicenow-tab-button" class="tab-button" type="button">ServiceNow Sync</button>
     <button id="settings-tab-button" class="tab-button" type="button">Settings</button>
+    <button id="profiles-tab-button" class="tab-button" type="button">Profiles</button>
   </div>
 
   <div class="dashboard-panel">
@@ -209,6 +214,18 @@
           <button id="sn-save-default-rate-type-button">Save</button>
         </div>
         <p id="settings-status" class="dashboard-status"></p>
+      </section>
+    </div>
+
+    <div id="profiles-tab-content" class="tab-content">
+      <section class="dashboard-section profile-management-panel">
+        <h3>Profiles</h3>
+        <p class="settings-helper-text">Profiles keep time blocks and ServiceNow settings separate. Deleting a profile permanently removes its data.</p>
+        <div class="profile-management-actions">
+          <button id="create-profile-button" type="button">New Profile</button>
+          <button id="rename-profile-button" type="button">Rename Profile</button>
+          <button id="delete-profile-button" type="button">Delete Profile</button>
+        </div>
       </section>
     </div>
   </div>

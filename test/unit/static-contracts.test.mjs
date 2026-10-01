@@ -30,7 +30,7 @@ test("[F-SN-06] only the page bridge makes ServiceNow network requests and store
     password: "must-not-persist",
     csrfToken: "must-not-persist",
   });
-  assert.deepEqual(storage.snapshot().sn_config, {
+  assert.deepEqual(storage.snapshot().tm_profile_default_snConfig, {
     enabled: true,
     instanceUrl: "https://example.service-now.com",
     defaultRateTypeSysId: "",

@@ -29,6 +29,10 @@ const applyCustomRangeButton = document.getElementById("apply-custom-range-butto
 const periodTypeSelect = document.getElementById("period-type");
 const periodSummaryLabel = document.getElementById("period-summary-label");
 const dashboardStatus = document.getElementById("log-display");
+const dashboardProfileSelect = document.getElementById("dashboard-profile-select");
+const createProfileButton = document.getElementById("create-profile-button");
+const renameProfileButton = document.getElementById("rename-profile-button");
+const deleteProfileButton = document.getElementById("delete-profile-button");
 
 const kpiTotalTime = document.getElementById("kpi-total-time");
 const kpiTaskCount = document.getElementById("kpi-task-count");
@@ -56,9 +60,11 @@ const snConnectionBadge = document.getElementById("sn-connection-badge");
 const dashboardTabButton = document.getElementById("dashboard-tab-button");
 const serviceNowTabButton = document.getElementById("servicenow-tab-button");
 const settingsTabButton = document.getElementById("settings-tab-button");
+const profilesTabButton = document.getElementById("profiles-tab-button");
 const dashboardTabContent = document.getElementById("dashboard-tab-content");
 const serviceNowTabContent = document.getElementById("servicenow-tab-content");
 const settingsTabContent = document.getElementById("settings-tab-content");
+const profilesTabContent = document.getElementById("profiles-tab-content");
 const taskPagePrevButton = document.getElementById("task-page-prev");
 const taskPageNextButton = document.getElementById("task-page-next");
 const taskPageInfo = document.getElementById("task-page-info");
@@ -83,20 +89,24 @@ let suppressTimeFieldSync = false;
 let areBlocksExpanded = false;
 let commentSuggestionsOpen = false;
 const DEFAULT_DASHBOARD_RANGE_PRESET = "this-week";
-const DASHBOARD_PREFERENCES_KEY = "dashboardPreferences";
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
+let profileState = { activeProfile: null, profiles: [] };
 
 document.addEventListener("DOMContentLoaded", () => {
   setActiveTab("dashboard");
   bindDashboardEvents();
-  loadServiceNowConfig();
-  refreshServiceNowLookupsFromCache();
-  restoreDashboardRangePreset(() => {
-    rebuildDashboard();
+  loadProfileState(() => {
+    reloadActiveProfileData();
   });
 });
 
 function bindDashboardEvents() {
+  dashboardProfileSelect.addEventListener("change", () => {
+    selectDashboardProfile(dashboardProfileSelect.value);
+  });
+  createProfileButton.addEventListener("click", createDashboardProfile);
+  renameProfileButton.addEventListener("click", renameDashboardProfile);
+  deleteProfileButton.addEventListener("click", deleteDashboardProfile);
   rangePresetSelect.addEventListener("change", () => {
     updateCustomRangeControlsVisibility();
     saveDashboardRangePreset();
@@ -145,6 +155,7 @@ function bindDashboardEvents() {
   dashboardTabButton.addEventListener("click", () => setActiveTab("dashboard"));
   serviceNowTabButton.addEventListener("click", () => setActiveTab("servicenow"));
   settingsTabButton.addEventListener("click", () => setActiveTab("settings"));
+  profilesTabButton.addEventListener("click", () => setActiveTab("profiles"));
   taskPagePrevButton.addEventListener("click", () => {
     setTaskPage(currentTaskPage - 1);
   });
@@ -213,19 +224,15 @@ function saveDashboardRangePreset() {
   const selectedPreset = isSupportedDashboardRangePreset(rangePresetSelect.value)
     ? rangePresetSelect.value
     : DEFAULT_DASHBOARD_RANGE_PRESET;
-  chrome.storage.local.set(
-    {
-      [DASHBOARD_PREFERENCES_KEY]: {
-        rangePreset: selectedPreset,
-      },
-    },
-    () => {}
-  );
+  chrome.runtime.sendMessage({
+    action: "profiles/saveDashboardPreferences",
+    preferences: { rangePreset: selectedPreset },
+  });
 }
 
 function restoreDashboardRangePreset(onComplete) {
-  chrome.storage.local.get([DASHBOARD_PREFERENCES_KEY], (result) => {
-    const preferences = result?.[DASHBOARD_PREFERENCES_KEY] || {};
+  chrome.runtime.sendMessage({ action: "profiles/getDashboardPreferences" }, (response) => {
+    const preferences = response?.data || {};
     const savedPreset = String(preferences.rangePreset || "").trim();
     const resolvedPreset = isSupportedDashboardRangePreset(savedPreset)
       ? savedPreset
@@ -238,18 +245,118 @@ function restoreDashboardRangePreset(onComplete) {
   });
 }
 
+function loadProfileState(onComplete) {
+  chrome.runtime.sendMessage({ action: "profiles/getState" }, (response) => {
+    if (response?.status !== "success") {
+      dashboardStatus.textContent = response?.message || "Unable to load profiles.";
+      return;
+    }
+    renderDashboardProfiles(response.data);
+    if (typeof onComplete === "function") {
+      onComplete();
+    }
+  });
+}
+
+function renderDashboardProfiles(nextState) {
+  profileState = nextState || { activeProfile: null, profiles: [] };
+  dashboardProfileSelect.replaceChildren();
+  for (const profile of profileState.profiles || []) {
+    const option = document.createElement("option");
+    option.value = profile.id;
+    option.textContent = profile.name;
+    dashboardProfileSelect.appendChild(option);
+  }
+  dashboardProfileSelect.value = profileState.activeProfile?.id || "";
+  deleteProfileButton.disabled = Boolean(profileState.activeProfile?.isDefault);
+  chrome.runtime.sendMessage({ action: "checkStatus" }, (response) => {
+    const taskIsActive = Boolean(response?.timerData?.savedTaskName);
+    dashboardProfileSelect.disabled = taskIsActive;
+    createProfileButton.disabled = taskIsActive;
+    deleteProfileButton.disabled = taskIsActive || Boolean(profileState.activeProfile?.isDefault);
+  });
+}
+
+function reloadActiveProfileData() {
+  editingBlockId = null;
+  loadServiceNowConfig();
+  refreshServiceNowLookupsFromCache();
+  restoreDashboardRangePreset(() => rebuildDashboard());
+}
+
+function selectDashboardProfile(profileId) {
+  chrome.runtime.sendMessage({ action: "profiles/select", profileId }, (response) => {
+    if (response?.status !== "success") {
+      dashboardStatus.textContent = response?.message || "Unable to switch profiles.";
+      dashboardProfileSelect.value = profileState.activeProfile?.id || "";
+      return;
+    }
+    renderDashboardProfiles(response.data);
+    reloadActiveProfileData();
+  });
+}
+
+function createDashboardProfile() {
+  const name = window.prompt("Name the new profile:");
+  if (name === null) return;
+  chrome.runtime.sendMessage({ action: "profiles/create", name }, (response) => {
+    if (response?.status !== "success") {
+      dashboardStatus.textContent = response?.message || "Unable to create profile.";
+      return;
+    }
+    renderDashboardProfiles(response.data);
+    dashboardStatus.textContent = "Profile created.";
+    reloadActiveProfileData();
+  });
+}
+
+function renameDashboardProfile() {
+  const activeProfile = profileState.activeProfile;
+  if (!activeProfile) return;
+  const name = window.prompt("Rename profile:", activeProfile.name);
+  if (name === null) return;
+  chrome.runtime.sendMessage({ action: "profiles/rename", profileId: activeProfile.id, name }, (response) => {
+    if (response?.status !== "success") {
+      dashboardStatus.textContent = response?.message || "Unable to rename profile.";
+      return;
+    }
+    renderDashboardProfiles(response.data);
+    dashboardStatus.textContent = "Profile renamed.";
+  });
+}
+
+function deleteDashboardProfile() {
+  const activeProfile = profileState.activeProfile;
+  if (!activeProfile || activeProfile.isDefault) return;
+  if (!window.confirm(`Delete ${activeProfile.name} and all of its time and ServiceNow data? This cannot be undone.`)) {
+    return;
+  }
+  chrome.runtime.sendMessage({ action: "profiles/delete", profileId: activeProfile.id }, (response) => {
+    if (response?.status !== "success") {
+      dashboardStatus.textContent = response?.message || "Unable to delete profile.";
+      return;
+    }
+    renderDashboardProfiles(response.data);
+    dashboardStatus.textContent = "Profile deleted. Default is now active.";
+    reloadActiveProfileData();
+  });
+}
+
 function setActiveTab(tabName) {
   const showDashboard = tabName === "dashboard";
   const showServiceNow = tabName === "servicenow";
   const showSettings = tabName === "settings";
+  const showProfiles = tabName === "profiles";
 
   dashboardTabButton.classList.toggle("active", showDashboard);
   serviceNowTabButton.classList.toggle("active", showServiceNow);
   settingsTabButton.classList.toggle("active", showSettings);
+  profilesTabButton.classList.toggle("active", showProfiles);
 
   dashboardTabContent.classList.toggle("active", showDashboard);
   serviceNowTabContent.classList.toggle("active", showServiceNow);
   settingsTabContent.classList.toggle("active", showSettings);
+  profilesTabContent.classList.toggle("active", showProfiles);
 }
 
 function setSnStatus(message) {
@@ -375,8 +482,40 @@ function requestHostPermission(originPattern) {
   });
 }
 
+function buildLocalTaskSuggestions(blocks, queryText = "") {
+  const query = String(queryText || "").trim().toLowerCase();
+  const recentTasks = new Map();
+
+  for (const block of Array.isArray(blocks) ? blocks : []) {
+    const task = String(block?.task || "").trim();
+    if (!task || (query && !task.toLowerCase().includes(query))) {
+      continue;
+    }
+    const startMs = Number(block?.startMs);
+    const endMs = Number(block?.endMs);
+    const lastUsedMs = Number.isFinite(endMs) ? endMs : Number.isFinite(startMs) ? startMs : 0;
+    const key = task.toLowerCase();
+    const existing = recentTasks.get(key);
+    if (!existing || lastUsedMs >= existing.lastUsedMs) {
+      recentTasks.set(key, { text: task, lastUsedMs });
+    }
+  }
+
+  return Array.from(recentTasks.values())
+    .sort((a, b) => b.lastUsedMs - a.lastUsedMs || a.text.localeCompare(b.text))
+    .map((item) => item.text);
+}
+
 function getAssignmentOptions(filterText = "") {
   const query = String(filterText || "").trim().toLowerCase();
+  if (!snConfig.enabled) {
+    return buildLocalTaskSuggestions(allBlocks, query).map((task) => ({
+      value: `local:${task.toLowerCase()}`,
+      label: task,
+      kind: "local",
+      data: { task },
+    }));
+  }
 
   const taskOptions = (Array.isArray(snLookupCache.tasks) ? snLookupCache.tasks : [])
     .filter((task) => {
@@ -1882,4 +2021,16 @@ document.getElementById("cancel-log-button").addEventListener("click", () => {
   addLogModal.style.display = "none";
   clearManualMessages();
   resetManualForm();
+});
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.action === "updateTime") {
+    renderDashboardProfiles(profileState);
+    return;
+  }
+  if (message.action !== "profileChanged") {
+    return;
+  }
+  renderDashboardProfiles(message.data);
+  reloadActiveProfileData();
 });

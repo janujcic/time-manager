@@ -1,6 +1,6 @@
 # ServiceNow Integration
 
-ServiceNow integration is optional. It uses the user's existing authenticated ServiceNow browser tab; the extension does not collect or store credentials, cookies, or CSRF tokens.
+ServiceNow integration is optional and configured independently for each profile. It uses the user's existing authenticated ServiceNow browser tab; the extension does not collect or store credentials, cookies, or CSRF tokens. Browser host permissions are extension-wide, so deleting a profile removes its configuration and cached data but does not revoke a permission another profile may use.
 
 ## Connection flow
 
@@ -20,7 +20,7 @@ Refreshing ServiceNow data fetches:
 - the current user's time codes; and
 - active rate types.
 
-The result is cached locally for the popup and dashboard. Cache data is a convenience, not proof that the ServiceNow session is still valid.
+The result is cached locally for the active profile's popup and dashboard. Cache data is a convenience, not proof that the ServiceNow session is still valid.
 
 ## Time-block requirements
 

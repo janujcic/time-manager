@@ -2,6 +2,10 @@ const TIME_BLOCKS_KEY = "timeBlocks";
 const SN_CONFIG_KEY = "sn_config";
 const SN_LOOKUP_CACHE_KEY = "sn_lookup_cache";
 const TIMER_RUNTIME_KEY = "timer_runtime";
+const DASHBOARD_PREFERENCES_KEY = "dashboardPreferences";
+const PROFILE_INDEX_KEY = "tm_profile_index";
+const PROFILE_STORAGE_PREFIX = "tm_profile_";
+const DEFAULT_PROFILE_ID = "default";
 const DEPRECATED_STORAGE_KEYS = ["timeSessions", "sn_timecards_cache", "sn_last_sync_report"];
 
 const DEFAULT_SN_CONFIG = {
@@ -47,6 +51,8 @@ let lastConnectedSnTabId = null;
 let lastConnectedSnUserId = "";
 let lastActionIndicatorUpdateMs = 0;
 let lastActionIndicatorMinute = -1;
+let profileIndex = null;
+let activeProfileId = DEFAULT_PROFILE_ID;
 
 const initializationPromise = initializeStorage().catch((error) => {
   console.error("Storage initialization failed:", error);
@@ -54,49 +60,32 @@ const initializationPromise = initializeStorage().catch((error) => {
 
 async function initializeStorage() {
   const result = await storageGet([
+    PROFILE_INDEX_KEY,
     TIME_BLOCKS_KEY,
     SN_CONFIG_KEY,
     SN_LOOKUP_CACHE_KEY,
     TIMER_RUNTIME_KEY,
+    DASHBOARD_PREFERENCES_KEY,
     ...DEPRECATED_STORAGE_KEYS,
   ]);
-  const updatePayload = {};
-  if (!Array.isArray(result[TIME_BLOCKS_KEY])) {
-    updatePayload[TIME_BLOCKS_KEY] = [];
-  }
-  if (!result[SN_CONFIG_KEY] || typeof result[SN_CONFIG_KEY] !== "object") {
-    updatePayload[SN_CONFIG_KEY] = { ...DEFAULT_SN_CONFIG };
+  const storedIndex = result[PROFILE_INDEX_KEY];
+  if (!storedIndex || !Array.isArray(storedIndex.profiles) || storedIndex.profiles.length === 0) {
+    const defaultProfile = { id: DEFAULT_PROFILE_ID, name: "Default", isDefault: true };
+    profileIndex = { version: 1, activeProfileId: DEFAULT_PROFILE_ID, profiles: [defaultProfile] };
+    activeProfileId = DEFAULT_PROFILE_ID;
+    await storageSet({
+      [PROFILE_INDEX_KEY]: profileIndex,
+      [getProfileStorageKey(DEFAULT_PROFILE_ID, "timeBlocks")]: Array.isArray(result[TIME_BLOCKS_KEY]) ? result[TIME_BLOCKS_KEY] : [],
+      [getProfileStorageKey(DEFAULT_PROFILE_ID, "timerRuntime")]: result[TIMER_RUNTIME_KEY] || null,
+      [getProfileStorageKey(DEFAULT_PROFILE_ID, "snConfig")]: normalizeStoredConfig(result[SN_CONFIG_KEY]),
+      [getProfileStorageKey(DEFAULT_PROFILE_ID, "snLookupCache")]: normalizeStoredLookupCache(result[SN_LOOKUP_CACHE_KEY]),
+      [getProfileStorageKey(DEFAULT_PROFILE_ID, "dashboardPreferences")]: result[DASHBOARD_PREFERENCES_KEY] || {},
+    });
+    await storageRemove([TIME_BLOCKS_KEY, TIMER_RUNTIME_KEY, SN_CONFIG_KEY, SN_LOOKUP_CACHE_KEY, DASHBOARD_PREFERENCES_KEY]);
   } else {
-    const configPatch = {};
-    if (!Object.prototype.hasOwnProperty.call(result[SN_CONFIG_KEY], "defaultRateTypeSysId")) {
-      configPatch.defaultRateTypeSysId = "";
-    }
-    if (!Object.prototype.hasOwnProperty.call(result[SN_CONFIG_KEY], "notesSuggestionWeeks")) {
-      configPatch.notesSuggestionWeeks = 4;
-    }
-    if (Object.keys(configPatch).length > 0) {
-      updatePayload[SN_CONFIG_KEY] = {
-        ...result[SN_CONFIG_KEY],
-        ...configPatch,
-      };
-    }
-  }
-  if (!result[SN_LOOKUP_CACHE_KEY] || typeof result[SN_LOOKUP_CACHE_KEY] !== "object") {
-    updatePayload[SN_LOOKUP_CACHE_KEY] = {
-      fetchedAtMs: 0,
-      tasks: [],
-      categories: [],
-      timeCodes: [],
-      rateTypes: [],
-    };
-  } else if (!Array.isArray(result[SN_LOOKUP_CACHE_KEY].rateTypes)) {
-    updatePayload[SN_LOOKUP_CACHE_KEY] = {
-      ...result[SN_LOOKUP_CACHE_KEY],
-      rateTypes: [],
-    };
-  }
-  if (Object.keys(updatePayload).length > 0) {
-    await storageSet(updatePayload);
+    profileIndex = normalizeProfileIndex(storedIndex);
+    activeProfileId = profileIndex.activeProfileId;
+    await storageSet({ [PROFILE_INDEX_KEY]: profileIndex });
   }
 
   const keysToRemove = DEPRECATED_STORAGE_KEYS.filter((key) =>
@@ -106,7 +95,55 @@ async function initializeStorage() {
     await storageRemove(keysToRemove);
   }
 
-  await restoreTimerRuntime(result[TIMER_RUNTIME_KEY]);
+  const activeRuntime = await getProfileValue("timerRuntime", null);
+  await restoreTimerRuntime(activeRuntime);
+}
+
+function normalizeStoredConfig(config) {
+  return {
+    ...DEFAULT_SN_CONFIG,
+    ...(config && typeof config === "object" ? config : {}),
+    defaultRateTypeSysId: readString(config?.defaultRateTypeSysId),
+    notesSuggestionWeeks: normalizeNotesSuggestionWeeks(config?.notesSuggestionWeeks),
+  };
+}
+
+function normalizeStoredLookupCache(cache) {
+  return {
+    fetchedAtMs: Number(cache?.fetchedAtMs) || 0,
+    tasks: Array.isArray(cache?.tasks) ? cache.tasks : [],
+    categories: Array.isArray(cache?.categories) ? cache.categories : [],
+    timeCodes: Array.isArray(cache?.timeCodes) ? cache.timeCodes : [],
+    rateTypes: Array.isArray(cache?.rateTypes) ? cache.rateTypes : [],
+  };
+}
+
+function normalizeProfileIndex(index) {
+  const rawProfiles = Array.isArray(index?.profiles) ? index.profiles : [];
+  const profiles = rawProfiles
+    .filter((profile) => profile && typeof profile.id === "string" && typeof profile.name === "string")
+    .map((profile) => ({ id: profile.id, name: profile.name, isDefault: profile.id === DEFAULT_PROFILE_ID }));
+  if (!profiles.some((profile) => profile.id === DEFAULT_PROFILE_ID)) {
+    profiles.unshift({ id: DEFAULT_PROFILE_ID, name: "Default", isDefault: true });
+  }
+  const activeProfileId = profiles.some((profile) => profile.id === index?.activeProfileId)
+    ? index.activeProfileId
+    : DEFAULT_PROFILE_ID;
+  return { version: 1, activeProfileId, profiles };
+}
+
+function getProfileStorageKey(profileId, area) {
+  return `${PROFILE_STORAGE_PREFIX}${profileId}_${area}`;
+}
+
+async function getProfileValue(area, fallback) {
+  const key = getProfileStorageKey(activeProfileId, area);
+  const result = await storageGet([key]);
+  return Object.prototype.hasOwnProperty.call(result, key) ? result[key] : fallback;
+}
+
+async function setProfileValue(area, value) {
+  await storageSet({ [getProfileStorageKey(activeProfileId, area)]: value });
 }
 
 function storageGet(keys) {
@@ -429,11 +466,11 @@ function getPersistableTimerRuntime() {
 }
 
 async function persistTimerRuntime() {
-  await storageSet({ [TIMER_RUNTIME_KEY]: getPersistableTimerRuntime() });
+  await setProfileValue("timerRuntime", getPersistableTimerRuntime());
 }
 
 async function clearTimerRuntime() {
-  await storageSet({ [TIMER_RUNTIME_KEY]: null });
+  await setProfileValue("timerRuntime", null);
 }
 
 function ensureTimerIntervalRunning() {
@@ -496,12 +533,12 @@ async function restoreTimerRuntime(runtime) {
 }
 
 async function getTimeBlocks() {
-  const result = await storageGet([TIME_BLOCKS_KEY]);
-  return Array.isArray(result[TIME_BLOCKS_KEY]) ? result[TIME_BLOCKS_KEY] : [];
+  const blocks = await getProfileValue("timeBlocks", []);
+  return Array.isArray(blocks) ? blocks : [];
 }
 
 async function saveTimeBlocks(blocks) {
-  await storageSet({ [TIME_BLOCKS_KEY]: blocks });
+  await setProfileValue("timeBlocks", blocks);
 }
 
 async function appendTimeBlock(block) {
@@ -668,6 +705,7 @@ async function startTimer(taskName, taskData = {}) {
   await persistTimerRuntime();
   ensureTimerIntervalRunning();
   await updateActionIndicator(true);
+  broadcastTimerUpdate();
 
   return { status: "started" };
 }
@@ -735,6 +773,7 @@ async function finishTimer() {
   activeBlockStartMs = null;
   await clearTimerRuntime();
   await clearActionIndicator();
+  broadcastTimerUpdate();
 
   return elapsedTime;
 }
@@ -1092,8 +1131,7 @@ function createSnRequestId() {
 }
 
 async function getServiceNowConfig() {
-  const result = await storageGet([SN_CONFIG_KEY]);
-  const config = result[SN_CONFIG_KEY] || DEFAULT_SN_CONFIG;
+  const config = await getProfileValue("snConfig", DEFAULT_SN_CONFIG);
   return {
     enabled: Boolean(config.enabled),
     instanceUrl: config.instanceUrl || "",
@@ -1122,7 +1160,7 @@ async function saveServiceNowConfig(configInput) {
     notesSuggestionWeeks: normalizeNotesSuggestionWeeks(configInput?.notesSuggestionWeeks),
   };
 
-  await storageSet({ [SN_CONFIG_KEY]: config });
+  await setProfileValue("snConfig", config);
   return { status: "success", data: config };
 }
 
@@ -1443,13 +1481,12 @@ async function serviceNowFetchLookups() {
     rateTypes,
   };
 
-  await storageSet({ [SN_LOOKUP_CACHE_KEY]: cache });
+  await setProfileValue("snLookupCache", cache);
   return { status: "success", data: cache };
 }
 
 async function getCachedLookups() {
-  const result = await storageGet([SN_LOOKUP_CACHE_KEY]);
-  const cache = result[SN_LOOKUP_CACHE_KEY] || {
+  const cache = (await getProfileValue("snLookupCache", null)) || {
     fetchedAtMs: 0,
     tasks: [],
     categories: [],
@@ -1614,9 +1651,145 @@ function getTimeStringFromMs(ms) {
 }
 
 async function clearSessions() {
+  await saveTimeBlocks([]);
+}
+
+function getProfileSummary(profile) {
+  return {
+    id: profile.id,
+    name: profile.name,
+    isDefault: profile.id === DEFAULT_PROFILE_ID,
+  };
+}
+
+async function getProfileState() {
+  const profiles = profileIndex.profiles.map(getProfileSummary);
+  return {
+    activeProfile: profiles.find((profile) => profile.id === activeProfileId) || profiles[0],
+    profiles,
+  };
+}
+
+function normalizeProfileName(rawName) {
+  return String(rawName || "").trim();
+}
+
+function validateProfileName(name, excludedId = "") {
+  if (!name) {
+    return "Profile name is required.";
+  }
+  if (profileIndex.profiles.some((profile) => profile.id !== excludedId && profile.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+    return "A profile with that name already exists.";
+  }
+  return "";
+}
+
+function hasActiveTask() {
+  return Boolean(timerData.savedTaskName);
+}
+
+function createProfileId() {
+  return `profile-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+async function saveProfileIndex() {
+  await storageSet({ [PROFILE_INDEX_KEY]: profileIndex });
+}
+
+async function setActiveProfile(profileId) {
+  activeProfileId = profileId;
+  profileIndex.activeProfileId = profileId;
+  await saveProfileIndex();
+  lastConnectedSnTabId = null;
+  lastConnectedSnUserId = "";
+  await restoreTimerRuntime(await getProfileValue("timerRuntime", null));
+  const state = await getProfileState();
+  chrome.runtime.sendMessage({ action: "profileChanged", data: state });
+  return state;
+}
+
+async function createProfile(rawName) {
+  const name = normalizeProfileName(rawName);
+  const error = validateProfileName(name);
+  if (error) {
+    return { status: "error", message: error };
+  }
+  if (hasActiveTask()) {
+    return { status: "error", code: "PROFILE_SWITCH_BLOCKED", message: "Finish the current task before changing profiles." };
+  }
+
+  const profile = { id: createProfileId(), name, isDefault: false };
+  profileIndex.profiles.push(profile);
   await storageSet({
-    [TIME_BLOCKS_KEY]: [],
+    [getProfileStorageKey(profile.id, "timeBlocks")]: [],
+    [getProfileStorageKey(profile.id, "timerRuntime")]: null,
+    [getProfileStorageKey(profile.id, "snConfig")]: { ...DEFAULT_SN_CONFIG },
+    [getProfileStorageKey(profile.id, "snLookupCache")]: normalizeStoredLookupCache(null),
+    [getProfileStorageKey(profile.id, "dashboardPreferences")]: {},
   });
+  const state = await setActiveProfile(profile.id);
+  return { status: "success", data: state };
+}
+
+async function renameProfile(profileId, rawName) {
+  const profile = profileIndex.profiles.find((item) => item.id === profileId);
+  if (!profile) {
+    return { status: "error", message: "Profile not found." };
+  }
+  const name = normalizeProfileName(rawName);
+  const error = validateProfileName(name, profileId);
+  if (error) {
+    return { status: "error", message: error };
+  }
+  profile.name = name;
+  await saveProfileIndex();
+  const state = await getProfileState();
+  chrome.runtime.sendMessage({ action: "profileChanged", data: state });
+  return { status: "success", data: state };
+}
+
+async function selectProfile(profileId) {
+  if (!profileIndex.profiles.some((profile) => profile.id === profileId)) {
+    return { status: "error", message: "Profile not found." };
+  }
+  if (profileId === activeProfileId) {
+    return { status: "success", data: await getProfileState() };
+  }
+  if (hasActiveTask()) {
+    return { status: "error", code: "PROFILE_SWITCH_BLOCKED", message: "Finish the current task before switching profiles." };
+  }
+  return { status: "success", data: await setActiveProfile(profileId) };
+}
+
+async function deleteProfile(profileId) {
+  if (profileId === DEFAULT_PROFILE_ID) {
+    return { status: "error", message: "The Default profile cannot be deleted." };
+  }
+  if (!profileIndex.profiles.some((profile) => profile.id === profileId)) {
+    return { status: "error", message: "Profile not found." };
+  }
+  if (hasActiveTask()) {
+    return { status: "error", code: "PROFILE_SWITCH_BLOCKED", message: "Finish the current task before deleting a profile." };
+  }
+  await storageRemove([
+    getProfileStorageKey(profileId, "timeBlocks"),
+    getProfileStorageKey(profileId, "timerRuntime"),
+    getProfileStorageKey(profileId, "snConfig"),
+    getProfileStorageKey(profileId, "snLookupCache"),
+    getProfileStorageKey(profileId, "dashboardPreferences"),
+  ]);
+  profileIndex.profiles = profileIndex.profiles.filter((profile) => profile.id !== profileId);
+  return { status: "success", data: await setActiveProfile(DEFAULT_PROFILE_ID) };
+}
+
+async function getDashboardPreferences() {
+  const preferences = await getProfileValue("dashboardPreferences", {});
+  return preferences && typeof preferences === "object" ? preferences : {};
+}
+
+async function saveDashboardPreferences(preferences) {
+  await setProfileValue("dashboardPreferences", preferences && typeof preferences === "object" ? preferences : {});
+  return { status: "success" };
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -1660,6 +1833,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else if (request.action === "clearSessions") {
       await clearSessions();
       sendResponse({ status: "cleared" });
+    } else if (request.action === "profiles/getState") {
+      sendResponse({ status: "success", data: await getProfileState() });
+    } else if (request.action === "profiles/create") {
+      sendResponse(await createProfile(request.name));
+    } else if (request.action === "profiles/rename") {
+      sendResponse(await renameProfile(request.profileId, request.name));
+    } else if (request.action === "profiles/select") {
+      sendResponse(await selectProfile(request.profileId));
+    } else if (request.action === "profiles/delete") {
+      sendResponse(await deleteProfile(request.profileId));
+    } else if (request.action === "profiles/getDashboardPreferences") {
+      sendResponse({ status: "success", data: await getDashboardPreferences() });
+    } else if (request.action === "profiles/saveDashboardPreferences") {
+      sendResponse(await saveDashboardPreferences(request.preferences));
     } else if (request.action === "servicenow/getConfig") {
       sendResponse({ status: "success", data: await getServiceNowConfig() });
     } else if (request.action === "servicenow/saveConfig") {

@@ -40,3 +40,14 @@ export async function loadNoteSuggestions(pageFile, nowMs) {
   });
   return sandbox.suggestions;
 }
+
+export async function loadLocalTaskSuggestions(pageFile) {
+  const source = await readFile(path.join(projectRoot, pageFile), "utf8");
+  const fn = extractFunction(source, "buildLocalTaskSuggestions");
+  const sandbox = {};
+  vm.createContext(sandbox);
+  vm.runInContext(`${fn}\nglobalThis.suggestions = buildLocalTaskSuggestions;`, sandbox, {
+    filename: pageFile,
+  });
+  return sandbox.suggestions;
+}

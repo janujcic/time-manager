@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { loadNoteSuggestions } from "../helpers/load-note-suggestions.mjs";
+import { loadLocalTaskSuggestions, loadNoteSuggestions } from "../helpers/load-note-suggestions.mjs";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const nowMs = new Date(2026, 4, 1, 12, 0, 0, 0).getTime();
@@ -21,6 +21,18 @@ function block(overrides = {}) {
 }
 
 for (const pageFile of ["main_window.js", "time_manager.js"]) {
+  test(`[F-TASK-SUGGEST-01] ${pageFile} offers recent profile-local task names without ServiceNow`, async () => {
+    const suggestions = await loadLocalTaskSuggestions(pageFile);
+    const blocks = [
+      { task: "Planning", startMs: 10 },
+      { task: "planning", startMs: 20 },
+      { task: "Review", startMs: 30 },
+      { task: "", startMs: 40 },
+    ];
+    assert.deepEqual([...suggestions(blocks, "")], ["Review", "planning"]);
+    assert.deepEqual([...suggestions(blocks, "pla")], ["planning"]);
+  });
+
   test(`[F-NOTES-01] [F-NOTES-02] ${pageFile} limits suggestions to matching category and time code`, async () => {
     const suggestions = await loadNoteSuggestions(pageFile, nowMs);
     const blocks = [

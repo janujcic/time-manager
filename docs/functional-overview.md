@@ -15,6 +15,16 @@ Before changing behavior, compare the proposed work with this overview and state
 - [F-TIMER-05] The active timer is restored after the browser service worker restarts, so elapsed time continues while the timer is running.
 - [F-TIMER-06] Local tracking works without enabling ServiceNow.
 
+## Local task suggestions
+
+- [F-TASK-SUGGEST-01] When ServiceNow is disabled, the task field in Task Registration and Add Time Block suggests past task names from the active profile. Suggestions are case-insensitively deduplicated, ordered by most recent use, and filtered by typed text.
+
+## Profiles
+
+- [F-PROFILE-01] Existing extension data is migrated into a protected Default profile, so upgrading does not lose tracked time or ServiceNow settings.
+- [F-PROFILE-02] Users can create, rename, and permanently delete non-Default profiles from the dashboard. Each profile keeps its own time blocks, timer state, ServiceNow configuration and cached lookups, note suggestions, and dashboard range preference; data cannot be transferred between profiles.
+- [F-PROFILE-03] The selected profile is shown and can be switched in both the dashboard and Task Registration window. Open views update when it changes, but switching or deleting a profile is blocked until the current running or paused task is finished.
+
 ## Time blocks and dashboard
 
 - [F-DASH-01] Every saved interval is a time block with a task name, start time, end time, duration, and source (`timer` or `manual`).

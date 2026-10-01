@@ -276,6 +276,27 @@ body {
 
 .main-popup-page {
   width: 400px;
+  padding: 14px 18px;
+}
+
+.main-popup-page h2 {
+  margin: 4px 0 12px;
+}
+
+.main-popup-page .enter-start-task > p {
+  margin: 10px 0;
+}
+
+.main-popup-page .start-fields-row {
+  gap: 7px;
+}
+
+.main-popup-page .field-error:empty {
+  display: none;
+}
+
+.main-popup-page .main-buttons {
+  margin-top: 12px;
 }
 
 .flex-center {
@@ -745,4 +766,67 @@ table tr:hover {
 #task-start-now-button:hover,
 #task-end-now-button:hover {
   background-color: #0254ce;
+}
+
+.profile-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.profile-bar label {
+  font-weight: bold;
+}
+
+.profile-bar select {
+  min-width: 150px;
+}
+
+.profile-bar button {
+  margin: 0;
+}
+
+.main-profile-bar {
+  justify-content: center;
+}
+
+.profile-management-panel {
+  max-width: 560px;
+}
+
+.profile-management-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.profile-management-actions button {
+  margin: 0;
+}
+
+#create-profile-button {
+  background-color: #4caf50;
+}
+
+#create-profile-button:hover {
+  background-color: #45a049;
+}
+
+#rename-profile-button {
+  background-color: #2f71d3;
+}
+
+#rename-profile-button:hover {
+  background-color: #0254ce;
+}
+
+#delete-profile-button {
+  background-color: #f44336;
+}
+
+#delete-profile-button:hover {
+  background-color: #d32f2f;
 }

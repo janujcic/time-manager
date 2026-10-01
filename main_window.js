@@ -33,6 +33,8 @@ const mainSnNotesInput = document.getElementById("main-sn-notes-input");
 const mainSnNotesSuggestionList = document.getElementById("main-sn-notes-suggestion-list");
 const mainSnNotesMenu = document.getElementById("main-sn-notes-menu");
 const mainSnNotesError = document.getElementById("main-sn-notes-error");
+const mainProfileSelect = document.getElementById("main-profile-select");
+let mainProfileState = { activeProfile: null, profiles: [] };
 
 function showTaskNameError(message) {
   mainSnAssignmentError.textContent = message;
@@ -74,6 +76,44 @@ function clearMainSnError() {
   mainSnNotesError.textContent = "";
   mainSnRateTypeError.textContent = "";
   taskNameError.textContent = "";
+}
+
+function renderMainProfiles(nextState) {
+  mainProfileState = nextState || { activeProfile: null, profiles: [] };
+  mainProfileSelect.replaceChildren();
+  for (const profile of mainProfileState.profiles || []) {
+    const option = document.createElement("option");
+    option.value = profile.id;
+    option.textContent = profile.name;
+    mainProfileSelect.appendChild(option);
+  }
+  mainProfileSelect.value = mainProfileState.activeProfile?.id || "";
+  mainProfileSelect.disabled = Boolean(currentTaskName);
+}
+
+function loadMainProfileState(onComplete) {
+  chrome.runtime.sendMessage({ action: "profiles/getState" }, (response) => {
+    if (response?.status !== "success") {
+      showTaskNameError(response?.message || "Unable to load profiles.");
+      return;
+    }
+    renderMainProfiles(response.data);
+    if (typeof onComplete === "function") onComplete();
+  });
+}
+
+function selectMainProfile() {
+  chrome.runtime.sendMessage({ action: "profiles/select", profileId: mainProfileSelect.value }, (response) => {
+    if (response?.status !== "success") {
+      showTaskNameError(response?.message || "Unable to switch profiles.");
+      mainProfileSelect.value = mainProfileState.activeProfile?.id || "";
+      return;
+    }
+    renderMainProfiles(response.data);
+    loadMainSnConfigAndLookups();
+    loadMainBlocksForSuggestions();
+    refreshFromBackground();
+  });
 }
 
 function normalizeNotesSuggestionWeeks(value) {
@@ -151,7 +191,40 @@ function updateMainSnVisibility() {
   mainSnNotesWrap.style.display = snConfig.enabled ? "flex" : "none";
 }
 
+function buildLocalTaskSuggestions(blocks, queryText = "") {
+  const query = String(queryText || "").trim().toLowerCase();
+  const recentTasks = new Map();
+
+  for (const block of Array.isArray(blocks) ? blocks : []) {
+    const task = String(block?.task || "").trim();
+    if (!task || (query && !task.toLowerCase().includes(query))) {
+      continue;
+    }
+    const startMs = Number(block?.startMs);
+    const endMs = Number(block?.endMs);
+    const lastUsedMs = Number.isFinite(endMs) ? endMs : Number.isFinite(startMs) ? startMs : 0;
+    const key = task.toLowerCase();
+    const existing = recentTasks.get(key);
+    if (!existing || lastUsedMs >= existing.lastUsedMs) {
+      recentTasks.set(key, { text: task, lastUsedMs });
+    }
+  }
+
+  return Array.from(recentTasks.values())
+    .sort((a, b) => b.lastUsedMs - a.lastUsedMs || a.text.localeCompare(b.text))
+    .map((item) => item.text);
+}
+
 function getAllAssignmentOptions() {
+  if (!snConfig.enabled) {
+    return buildLocalTaskSuggestions(mainAllBlocks).map((task) => ({
+      id: `local:${task.toLowerCase()}`,
+      label: task,
+      kind: "local",
+      data: { task },
+    }));
+  }
+
   const taskOptions = (Array.isArray(snLookupCache.tasks) ? snLookupCache.tasks : []).map((task) => ({
     id: `task:${task.sys_id}`,
     label: `[Task] ${task.number || task.sys_id} - ${task.short_description || ""}`,
@@ -173,6 +246,9 @@ function getAllAssignmentOptions() {
 
 function filterAssignmentOptions(queryText) {
   const query = String(queryText || "").trim().toLowerCase();
+  if (!snConfig.enabled) {
+    return getAllAssignmentOptions().filter((item) => !query || item.label.toLowerCase().includes(query));
+  }
   if (!query) {
     return getAllAssignmentOptions();
   }
@@ -506,6 +582,7 @@ function loadMainBlocksForSuggestions() {
     } else {
       mainAllBlocks = [];
     }
+    renderMainAssignmentOptions();
     refreshMainCommentSuggestions();
   });
 }
@@ -598,12 +675,16 @@ function refreshFromBackground() {
     } else {
       showRegistrationState();
     }
+    mainProfileSelect.disabled = Boolean(currentTaskName);
   });
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  loadMainSnConfigAndLookups();
-  loadMainBlocksForSuggestions();
+  loadMainProfileState(() => {
+    loadMainSnConfigAndLookups();
+    loadMainBlocksForSuggestions();
+  });
+  mainProfileSelect.addEventListener("change", selectMainProfile);
   mainSnAssignmentInput.addEventListener("focus", showMainAssignmentMenu);
   mainSnAssignmentInput.addEventListener("blur", () => {
     window.setTimeout(hideMainAssignmentMenu, 120);
@@ -792,6 +873,12 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message.action === "updateTime" && runningTask.style.display !== "none") {
     elapsedTimeDisplay.textContent = message.elapsedTime;
   }
+  if (message.action === "profileChanged") {
+    renderMainProfiles(message.data);
+    loadMainSnConfigAndLookups();
+    loadMainBlocksForSuggestions();
+    refreshFromBackground();
+  }
 });
 
 document.getElementById("show-log-button").addEventListener("click", () => {
@@ -800,8 +887,8 @@ document.getElementById("show-log-button").addEventListener("click", () => {
 });
 
 function openTimeManagerWindow() {
-  const width = 980;
-  const height = 760;
+  const width = Math.min(1080, screen.availWidth);
+  const height = Math.min(900, screen.availHeight);
   chrome.windows.create({
     url: "time_manager.html",
     type: "popup",

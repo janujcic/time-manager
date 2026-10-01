@@ -22,6 +22,10 @@ This file connects every user-facing rule in the [functional overview](functiona
 | F-TIMER-04 | Automated | Background timer test and Chromium popup flow |
 | F-TIMER-05 | Automated | Background service-worker restoration test |
 | F-TIMER-06 | Automated | Background timer test with default disabled ServiceNow configuration |
+| F-TASK-SUGGEST-01 | Automated | Unit tests against both Task Registration and Dashboard local-task suggestion implementations |
+| F-PROFILE-01 | Automated | Background legacy-data migration test |
+| F-PROFILE-02 | Automated | Background profile isolation and lifecycle test |
+| F-PROFILE-03 | Automated | Background active-task lock test and Chromium cross-view profile flow |
 | F-DASH-01 | Automated | Background manual-block shape test |
 | F-DASH-02 | Automated | Background manual-block tests for explicit end time and duration |
 | F-DASH-03 | Automated | Background update/delete test; deletion cannot be repeated |

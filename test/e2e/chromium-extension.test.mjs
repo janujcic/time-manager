@@ -53,6 +53,38 @@ test("[F-TIMER-01] [F-TIMER-04] the popup records a timer block that the dashboa
   assert.equal(await text(popup, "#elapsed-time"), "0h 0m 0s");
 });
 
+test("[F-PROFILE-03] profiles switch across open views and are locked by an unfinished task", async (t) => {
+  const extension = await launchExtension();
+  t.after(() => extension.close());
+  const dashboard = await extension.newExtensionPage("time_manager.html");
+  const popup = await extension.newExtensionPage("main_window.html");
+
+  await dashboard.waitForFunction(() => document.querySelectorAll("#dashboard-profile-select option").length === 1);
+  const defaultProfileId = await dashboard.locator("#dashboard-profile-select").inputValue();
+  await dashboard.locator("#profiles-tab-button").click();
+  dashboard.once("dialog", (dialog) => dialog.accept("Client Blue"));
+  await dashboard.locator("#create-profile-button").click();
+  await dashboard.waitForFunction(() => document.querySelectorAll("#dashboard-profile-select option").length === 2);
+  const clientProfileId = await dashboard.locator("#dashboard-profile-select").inputValue();
+  assert.notEqual(clientProfileId, defaultProfileId);
+  await popup.waitForFunction(
+    (profileId) => document.getElementById("main-profile-select")?.value === profileId,
+    clientProfileId
+  );
+
+  await popup.locator("#main-sn-assignment-input").fill("Client focus");
+  await popup.locator("#start-button").click();
+  await popup.locator(".running-task").waitFor({ state: "visible" });
+  assert.equal(await dashboard.locator("#dashboard-profile-select").isDisabled(), true);
+  await popup.locator("#finish-button").click();
+  await dashboard.waitForFunction(() => !document.getElementById("dashboard-profile-select")?.disabled);
+  await dashboard.locator("#dashboard-profile-select").selectOption(defaultProfileId);
+  await popup.waitForFunction(
+    (profileId) => document.getElementById("main-profile-select")?.value === profileId,
+    defaultProfileId
+  );
+});
+
 test("the dashboard updates user-visible totals when a manual block is added, edited, and removed", async (t) => {
   const extension = await launchExtension();
   t.after(() => extension.close());

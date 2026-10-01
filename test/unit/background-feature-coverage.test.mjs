@@ -158,7 +158,7 @@ test("[F-SN-03] [F-SN-04] lookup refresh caches normalized values and task entri
   const cacheResponse = await api.fetchLookups();
   assert.equal(cacheResponse.status, "success");
   assert.equal(cacheResponse.data.timeCodes[0].label, "DEV | Development");
-  assert.equal(storage.snapshot().sn_lookup_cache.rateTypes[0].name, "Standard");
+  assert.equal(storage.snapshot().tm_profile_default_snLookupCache.rateTypes[0].name, "Standard");
 
   const startMs = localTime(2026, 0, 5, 9, 0);
   await api.saveManualSession({ taskName: "Work", startTimeMs: startMs, endTimeMs: startMs + HOUR_MS, ...taskMetadata() });

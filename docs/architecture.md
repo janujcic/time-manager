@@ -23,13 +23,14 @@ All data is in `chrome.storage.local`.
 
 | Key | Purpose |
 | --- | --- |
-| `timeBlocks` | Completed timer and manual blocks. Each has an ID, task, start/end timestamps, duration, source, and optional ServiceNow metadata. |
-| `timer_runtime` | Current timer task, running state, accumulated duration, active start time, and ServiceNow metadata; restores an active timer after service-worker restart. |
-| `sn_config` | Whether integration is enabled, the ServiceNow instance origin, default rate type, and note-suggestion lookback period. |
-| `sn_lookup_cache` | Cached assigned tasks, categories, time codes, and rate types fetched from ServiceNow. |
-| `dashboardPreferences` | The last selected dashboard range preset. |
+| `tm_profile_index` | Profile IDs, names, the protected Default profile, and the active profile ID. |
+| `tm_profile_<id>_timeBlocks` | Completed timer and manual blocks for one profile. Each has an ID, task, start/end timestamps, duration, source, and optional ServiceNow metadata. |
+| `tm_profile_<id>_timerRuntime` | Current timer task, running state, accumulated duration, active start time, and ServiceNow metadata for one profile. |
+| `tm_profile_<id>_snConfig` | ServiceNow configuration for one profile. |
+| `tm_profile_<id>_snLookupCache` | Cached assigned tasks, categories, time codes, and rate types for one profile. |
+| `tm_profile_<id>_dashboardPreferences` | The last selected dashboard range preset for one profile. |
 
-Old storage keys are removed by `initializeStorage()` in `background.js`. Update that migration path if a persistent shape changes.
+`initializeStorage()` migrates the former global storage keys into the Default profile. Update that migration path if a persistent shape changes. Browser host permissions remain extension-wide even though ServiceNow configuration is profile-specific.
 
 ## Runtime message contract
 
@@ -41,6 +42,7 @@ The UI sends messages to `background.js`; the service worker sends `updateTime` 
 | Time blocks | `getTimeBlocks`, `saveManualSession`, `updateTimeBlock`, `deleteTimeBlock` |
 | Reports | `getSessions`, `getAggregatedSessions`, `getAggregatedByPeriod` |
 | ServiceNow | `servicenow/getConfig`, `servicenow/saveConfig`, `servicenow/connect`, `servicenow/checkSession`, `servicenow/fetchLookups`, `servicenow/getCachedLookups`, `servicenow/syncVisibleBlocks` |
+| Profiles | `profiles/getState`, `profiles/create`, `profiles/rename`, `profiles/select`, `profiles/delete`, `profiles/getDashboardPreferences`, `profiles/saveDashboardPreferences` |
 
 Keep request and response shapes compatible when changing an existing action. Add new actions rather than silently changing the meaning of an existing one.
 
@@ -48,6 +50,7 @@ Keep request and response shapes compatible when changing an existing action. Ad
 
 - A time block has a positive duration: `endMs` is later than `startMs`.
 - Stopping a timer appends one completed block; finishing a timer clears the active runtime after stopping it.
+- Every block, timer runtime, ServiceNow configuration/cache, and dashboard preference is read from the active profile only. The active profile cannot change while a task is running or paused.
 - ServiceNow metadata is required only when the integration is enabled. A category requires notes; a task or category requires a time code.
 - A sync range is bounded. Blocks are clipped to it, split at local midnight, and grouped by workweek, assignment/category, time code, rate type, and notes.
 

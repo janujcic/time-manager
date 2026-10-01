@@ -155,6 +155,11 @@ export async function loadBackground({
       saveManualSession,
       updateTimeBlock,
       deleteTimeBlock,
+      getProfileState,
+      createProfile,
+      renameProfile,
+      selectProfile,
+      deleteProfile,
     };
   `;
   vm.createContext(sandbox);
@@ -173,6 +178,11 @@ export async function loadBackground({
     saveManualSession: async (...args) => copy(await rawApi.saveManualSession(...args)),
     updateTimeBlock: async (...args) => copy(await rawApi.updateTimeBlock(...args)),
     deleteTimeBlock: async (...args) => copy(await rawApi.deleteTimeBlock(...args)),
+    getProfileState: async () => copy(await rawApi.getProfileState()),
+    createProfile: async (...args) => copy(await rawApi.createProfile(...args)),
+    renameProfile: async (...args) => copy(await rawApi.renameProfile(...args)),
+    selectProfile: async (...args) => copy(await rawApi.selectProfile(...args)),
+    deleteProfile: async (...args) => copy(await rawApi.deleteProfile(...args)),
     getConfig: async () => copy(await rawApi.getConfig()),
     getCachedLookups: async () => copy(await rawApi.getCachedLookups()),
     saveConfig: async (...args) => copy(await rawApi.saveConfig(...args)),
